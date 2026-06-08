@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "n64-debug-mcp"
+version = "0.1.0"
+description = "N64 ROM debugging MCP server backed by Mupen64Plus"
+requires-python = ">=3.11"
+dependencies = ["mcp>=1.0.0"]
+
+[project.scripts]
+n64-debug-mcp = "n64_debug_mcp.server:main"
+
+[tool.setuptools.packages.find]
+include = ["n64_debug_mcp*"]

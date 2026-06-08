@@ -1,0 +1,39 @@
+# Object files and intermediate build artifacts
+*.o
+*.obj
+*.a
+*.lib
+
+# IDE/editor
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+
+# ROMs (proprietary - do not distribute)
+roms/
+
+# Logs
+*.log
+
+# Build temporary files (but NOT the final DLLs/exes we need at runtime)
+build/mupen64plus/mupen64plus-core/projects/unix/_obj/
+build/mupen64plus/mupen64plus-audio-sdl/projects/unix/_obj/
+build/mupen64plus/mupen64plus-input-sdl/projects/unix/_obj/
+build/mupen64plus/mupen64plus-rsp-hle/projects/unix/_obj/
+build/mupen64plus/mupen64plus-ui-console/projects/unix/_obj/
+build/mupen64plus/share/
+build/mupen64plus/config/
