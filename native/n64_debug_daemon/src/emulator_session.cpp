@@ -73,8 +73,7 @@ EmulatorSession *EmulatorSession::sInstance = nullptr;
 EmulatorSession::EmulatorSession()
     : mCoreHandle(nullptr), mCoreLoaded(false), mDebuggerAvailable(false),
       mRomLoaded(false), mEmuRunning(false), mEmuPaused(false),
-      mFrameCounter(0), mAllowMemoryWrite(false),
-      mDbgRunState(M64P_DBG_RUNSTATE_RUNNING) {
+      mFrameCounter(0), mAllowMemoryWrite(false) {
     std::memset(&mAPI, 0, sizeof(mAPI));
     sInstance = this;
 }
@@ -122,6 +121,9 @@ bool EmulatorSession::initCore(const std::string &corePath) {
     *(void **)&mAPI.CoreErrorMessage = resolvePtr("CoreErrorMessage");
     *(void **)&mAPI.CoreGetRomSettings = resolvePtr("CoreGetRomSettings");
     *(void **)&mAPI.ConfigGetSectionParamInt = resolvePtr("ConfigGetSectionParamInt");
+    *(void **)&mAPI.ConfigOpenSection = resolvePtr("ConfigOpenSection");
+    *(void **)&mAPI.ConfigSetParameter = resolvePtr("ConfigSetParameter");
+    *(void **)&mAPI.ConfigGetParamBool = resolvePtr("ConfigGetParamBool");
 
     // Debugger API functions
     *(void **)&mAPI.DebugSetCallbacks = resolvePtr("DebugSetCallbacks");
@@ -289,6 +291,17 @@ bool EmulatorSession::startEmulation() {
     mEmuPaused = false;
     mFrameCounter = 0;
 
+    // Enable the debugger and force pure interpreter mode in core config before M64CMD_EXECUTE
+    if (mAPI.ConfigOpenSection && mAPI.ConfigSetParameter) {
+        m64p_handle coreCfg = nullptr;
+        if (mAPI.ConfigOpenSection("Core", &coreCfg) == M64ERR_SUCCESS && coreCfg) {
+            int trueVal = 1;
+            mAPI.ConfigSetParameter(coreCfg, "EnableDebugger", M64TYPE_BOOL, &trueVal);
+            int zeroVal = 0;
+            mAPI.ConfigSetParameter(coreCfg, "R4300Emulator", M64TYPE_INT, &zeroVal);
+        }
+    }
+
     // M64CMD_EXECUTE blocks — run on emulator thread
     mEmulatorThread = std::thread([this]() {
         mAPI.CoreDoCommand(M64CMD_EXECUTE, 0, nullptr);
@@ -314,20 +327,28 @@ void EmulatorSession::stopEmulation() {
 void EmulatorSession::pause() {
     if (!mEmuRunning || mEmuPaused) return;
     mAPI.CoreDoCommand(M64CMD_PAUSE, 0, nullptr);
+    if (mAPI.DebugSetRunState)
+        mAPI.DebugSetRunState(M64P_DBG_RUNSTATE_PAUSED);
     mEmuPaused = true;
 }
 
 void EmulatorSession::resume() {
     if (!mEmuRunning || !mEmuPaused) return;
+    if (mAPI.DebugSetRunState)
+        mAPI.DebugSetRunState(M64P_DBG_RUNSTATE_RUNNING);
     mAPI.CoreDoCommand(M64CMD_RESUME, 0, nullptr);
     mEmuPaused = false;
+    // Post semaphore to unblock emulator thread
+    if (mAPI.DebugStep)
+        mAPI.DebugStep();
 }
 
 bool EmulatorSession::stepInstruction() {
-    if (!mEmuRunning || !mEmuPaused || !isDebuggerAvailable()) return false;
+    if (!mEmuRunning || !mEmuPaused || !isDebuggerAvailable())
+        return false;
     mAPI.DebugSetRunState(M64P_DBG_RUNSTATE_STEPPING);
-    mAPI.DebugStep();
-    return true;
+    m64p_error r = mAPI.DebugStep();
+    return r == M64ERR_SUCCESS;
 }
 
 bool EmulatorSession::stepFrame() {
@@ -434,12 +455,7 @@ std::vector<uint8_t> EmulatorSession::readMemory(uint32_t address, uint32_t size
     if (!isDebuggerAvailable() || !mEmuRunning) return result;
     result.resize(size);
     for (uint32_t i = 0; i < size; i++) {
-        uint8_t val = 0;
-        if (mAPI.DebugMemRead8(address + i, &val) != M64ERR_SUCCESS) {
-            result.resize(i);
-            break;
-        }
-        result[i] = val;
+        result[i] = mAPI.DebugMemRead8(address + i);
     }
     return result;
 }
@@ -447,29 +463,40 @@ std::vector<uint8_t> EmulatorSession::readMemory(uint32_t address, uint32_t size
 bool EmulatorSession::writeMemory(uint32_t address, const uint8_t *data, uint32_t size) {
     if (!mAllowMemoryWrite) return false;
     if (!isDebuggerAvailable() || !mEmuRunning) return false;
-    m64p_error rval = M64ERR_SUCCESS;
-    for (uint32_t i = 0; i < size && rval == M64ERR_SUCCESS; i++) {
-        rval = mAPI.DebugMemWrite8(address + i, data[i]);
+    for (uint32_t i = 0; i < size; i++) {
+        mAPI.DebugMemWrite8(address + i, data[i]);
     }
-    return rval == M64ERR_SUCCESS;
+    return true;
 }
 
 uint32_t EmulatorSession::translateAddress(uint32_t vaddr) {
     if (!isDebuggerAvailable()) return vaddr;
-    uint32_t paddr = vaddr;
-    mAPI.DebugVirtualToPhysical(vaddr, &paddr);
-    return paddr;
+    return mAPI.DebugVirtualToPhysical(vaddr);
+}
+
+int EmulatorSession::getDebugState(m64p_dbg_state state) {
+    if (!isDebuggerAvailable() || !mAPI.DebugGetState) return -1;
+    return mAPI.DebugGetState(state);
 }
 
 // --- Breakpoints ---
 int EmulatorSession::addExecBreakpoint(uint32_t vaddr) {
-    if (!isDebuggerAvailable()) return -1;
-    int index = -1;
-    m64p_error r = mAPI.DebugBreakpointCommand(M64P_BKP_CMD_ADD_ADDR, (int)vaddr, nullptr);
-    if (r == M64ERR_SUCCESS) {
-        mAPI.DebugBreakpointLookup(vaddr, 0, M64P_BKP_FLAG_EXEC, &index);
+    if (!isDebuggerAvailable())
+        return -1;
+
+    m64p_breakpoint bp;
+    bp.address = vaddr;
+    bp.endaddr = vaddr;
+    bp.flags = M64P_BKP_FLAG_EXEC | M64P_BKP_FLAG_ENABLED;
+    int r = mAPI.DebugBreakpointCommand(M64P_BKP_CMD_ADD_STRUCT, 0, &bp);
+    if (r == 0) {
+        int index = mAPI.DebugBreakpointLookup(vaddr, 4, M64P_BKP_FLAG_EXEC | M64P_BKP_FLAG_ENABLED);
+        int numBps = mAPI.DebugGetState(M64P_DBG_NUM_BREAKPOINTS);
+        if (index >= 0) return index;
+        if (numBps > 0) return numBps - 1;
+        return 0;
     }
-    return index;
+    return -1;
 }
 
 int EmulatorSession::addMemoryBreakpoint(uint32_t vaddr, uint32_t size, unsigned int flags) {
@@ -479,30 +506,30 @@ int EmulatorSession::addMemoryBreakpoint(uint32_t vaddr, uint32_t size, unsigned
     bp.address = paddr;
     bp.endaddr = paddr + size - 1;
     bp.flags = flags | M64P_BKP_FLAG_ENABLED;
-    int index = -1;
-    m64p_error r = mAPI.DebugBreakpointCommand(M64P_BKP_CMD_ADD_STRUCT, 0, &bp);
-    if (r == M64ERR_SUCCESS) {
-        mAPI.DebugBreakpointLookup(paddr, size, flags, &index);
+    int r = mAPI.DebugBreakpointCommand(M64P_BKP_CMD_ADD_STRUCT, 0, &bp);
+    if (r == 0) {
+        int index = mAPI.DebugBreakpointLookup(paddr, size, flags | M64P_BKP_FLAG_ENABLED);
+        if (index >= 0) return index;
+        int numBps = mAPI.DebugGetState(M64P_DBG_NUM_BREAKPOINTS);
+        return (numBps > 0) ? numBps - 1 : 0;
     }
-    return index;
+    return -1;
 }
 
 bool EmulatorSession::removeBreakpoint(int index) {
     if (!isDebuggerAvailable()) return false;
-    m64p_error r = mAPI.DebugBreakpointCommand(M64P_BKP_CMD_REMOVE_IDX, index, nullptr);
-    return r == M64ERR_SUCCESS;
+    int r = mAPI.DebugBreakpointCommand(M64P_BKP_CMD_REMOVE_IDX, index, nullptr);
+    return r == 0;
 }
 
 std::vector<BreakpointInfo> EmulatorSession::listBreakpoints() {
     std::vector<BreakpointInfo> result;
     if (!isDebuggerAvailable()) return result;
-    int numBps = 0;
-    mAPI.DebugGetState(M64P_DBG_NUM_BREAKPOINTS, &numBps);
+    int numBps = mAPI.DebugGetState(M64P_DBG_NUM_BREAKPOINTS);
     for (int i = 0; i < numBps; i++) {
-        // Retrieve BP info via DebugBreakpointLookup and DebugBreakpointCommand
-        // For now we return what we can with the available API
         BreakpointInfo info;
         info.index = i;
+        info.enabled = true;
         result.push_back(info);
     }
     return result;
@@ -574,6 +601,10 @@ void EmulatorSession::onCoreStateChange(m64p_core_param param, int value) {
 }
 
 void EmulatorSession::onDebuggerUpdate(unsigned int pc) {
+    // Check if core debugger is paused (breakpoint hit)
+    if (mAPI.DebugGetState && mAPI.DebugGetState(M64P_DBG_RUN_STATE) == M64P_DBG_RUNSTATE_PAUSED) {
+        mEmuPaused = true;
+    }
     std::lock_guard<std::mutex> lock(mEventMutex);
     TraceEvent ev;
     ev.frame = mFrameCounter;

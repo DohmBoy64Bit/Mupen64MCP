@@ -76,27 +76,30 @@ struct CoreAPI {
     m64p_error (*CoreGetRomSettings)(m64p_rom_settings *, int, int, int) = nullptr;
 
     // Config
+    m64p_error (*ConfigOpenSection)(const char *, m64p_handle *) = nullptr;
+    m64p_error (*ConfigSetParameter)(m64p_handle, const char *, m64p_type, const void *) = nullptr;
+    int (*ConfigGetParamBool)(m64p_handle, const char *) = nullptr;
     m64p_error (*ConfigGetSectionParamInt)(const char *, const char *, int32_t *) = nullptr;
 
     // Debugger (conditionally available; check M64CAPS_DEBUGGER)
     m64p_error (*DebugSetCallbacks)(void (*)(void), void (*)(unsigned int), void (*)(void)) = nullptr;
     m64p_error (*DebugSetRunState)(m64p_dbg_runstate) = nullptr;
-    m64p_error (*DebugGetState)(m64p_dbg_state, int *) = nullptr;
+    int (*DebugGetState)(m64p_dbg_state) = nullptr;
     m64p_error (*DebugStep)(void) = nullptr;
-    m64p_error (*DebugDecodeOp)(uint32_t, char *, char *, uint32_t) = nullptr;
-    m64p_error (*DebugMemGetPointer)(m64p_dbg_memptr_type, void **) = nullptr;
-    m64p_error (*DebugMemRead8)(uint32_t, uint8_t *) = nullptr;
-    m64p_error (*DebugMemRead16)(uint32_t, uint16_t *) = nullptr;
-    m64p_error (*DebugMemRead32)(uint32_t, uint32_t *) = nullptr;
-    m64p_error (*DebugMemRead64)(uint32_t, uint64_t *) = nullptr;
-    m64p_error (*DebugMemWrite8)(uint32_t, uint8_t) = nullptr;
-    m64p_error (*DebugMemWrite16)(uint32_t, uint16_t) = nullptr;
-    m64p_error (*DebugMemWrite32)(uint32_t, uint32_t) = nullptr;
-    m64p_error (*DebugMemWrite64)(uint32_t, uint64_t) = nullptr;
+    void (*DebugDecodeOp)(unsigned int, char *, char *, int) = nullptr;
+    void *(*DebugMemGetPointer)(m64p_dbg_memptr_type) = nullptr;
+    unsigned char (*DebugMemRead8)(unsigned int) = nullptr;
+    unsigned short (*DebugMemRead16)(unsigned int) = nullptr;
+    unsigned int (*DebugMemRead32)(unsigned int) = nullptr;
+    unsigned long long (*DebugMemRead64)(unsigned int) = nullptr;
+    void (*DebugMemWrite8)(unsigned int, unsigned char) = nullptr;
+    void (*DebugMemWrite16)(unsigned int, unsigned short) = nullptr;
+    void (*DebugMemWrite32)(unsigned int, unsigned int) = nullptr;
+    void (*DebugMemWrite64)(unsigned int, unsigned long long) = nullptr;
     void *(*DebugGetCPUDataPtr)(m64p_dbg_cpu_data) = nullptr;
-    m64p_error (*DebugBreakpointLookup)(uint32_t, uint32_t, unsigned int, int *) = nullptr;
-    m64p_error (*DebugBreakpointCommand)(int, int, void *) = nullptr;
-    m64p_error (*DebugBreakpointTriggeredBy)(unsigned int *, uint32_t *) = nullptr;
-    m64p_error (*DebugVirtualToPhysical)(uint32_t, uint32_t *) = nullptr;
-    m64p_error (*DebugMemGetMemInfo)(m64p_dbg_mem_info, uint32_t, int *) = nullptr;
+    int (*DebugBreakpointLookup)(unsigned int, unsigned int, unsigned int) = nullptr;
+    int (*DebugBreakpointCommand)(m64p_dbg_bkp_command, unsigned int, m64p_breakpoint *) = nullptr;
+    void (*DebugBreakpointTriggeredBy)(uint32_t *, uint32_t *) = nullptr;
+    uint32_t (*DebugVirtualToPhysical)(uint32_t) = nullptr;
+    int (*DebugMemGetMemInfo)(m64p_dbg_mem_info, unsigned int) = nullptr;
 };

@@ -185,16 +185,18 @@ std::string JsonRpcServer::handleMethod(const std::string &method,
     }
     if (method == "status") {
         char buf[512];
+        int dbgState = mSession->getDebugState(M64P_DBG_RUN_STATE);
         snprintf(buf, sizeof(buf),
                  "{\"core_loaded\":%s,\"debugger_available\":%s,\"rom_loaded\":%s,"
-                 "\"running\":%s,\"paused\":%s,\"frame\":%llu,\"pc\":%s}",
+                 "\"running\":%s,\"paused\":%s,\"frame\":%llu,\"pc\":%s,\"dbg_run_state\":%d}",
                  mSession->hasDebugger() ? "true" : "false",
                  mSession->isDebuggerAvailable() ? "true" : "false",
                  mSession->isRomLoaded() ? "true" : "false",
                  mSession->isEmuRunning() ? "true" : "false",
                  mSession->isPaused() ? "true" : "false",
                  (unsigned long long)mSession->frameCount(),
-                 hexStr(mSession->getPC()).c_str());
+                 hexStr(mSession->getPC()).c_str(),
+                 dbgState);
         return formatResponse(id, buf);
     }
     if (method == "load_rom") {

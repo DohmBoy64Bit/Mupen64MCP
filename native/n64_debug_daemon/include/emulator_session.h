@@ -37,6 +37,7 @@ public:
     std::vector<uint8_t> readMemory(uint32_t address, uint32_t size);
     bool writeMemory(uint32_t address, const uint8_t *data, uint32_t size);
     uint32_t translateAddress(uint32_t vaddr);
+    int getDebugState(m64p_dbg_state state);
 
     // Breakpoints
     int addExecBreakpoint(uint32_t vaddr);
@@ -95,7 +96,6 @@ private:
     std::atomic<bool> mEmuRunning;
     std::atomic<bool> mEmuPaused;
     std::atomic<uint64_t> mFrameCounter;
-    volatile int mDbgRunState;
 
     // API function pointers
     CoreAPI mAPI;
