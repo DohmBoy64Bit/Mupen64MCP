@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "n64-debug-mcp": {
+      "type": "command",
+      "command": "uv",
+      "args": [
+        "--directory",
+        "D:\\Mupen64MCP\\mcp\\python",
+        "run",
+        "n64-debug-mcp"
+      ]
+    }
+  }
+}

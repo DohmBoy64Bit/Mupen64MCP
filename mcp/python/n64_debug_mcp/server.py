@@ -242,6 +242,38 @@ def n64_trace_rom_reads(enable: bool) -> dict[str, Any]:
     return _client().call("trace_rom_reads", {"enable": enable})
 
 
+@mcp.tool()
+def n64_wait_for_breakpoint(timeout: float = 10.0, poll_interval: float = 0.05) -> dict[str, Any]:
+    """Block until a breakpoint fires (emulator becomes paused), up to `timeout` seconds.
+
+    Polls status in a loop.  Use after resume() to wait for the CPU to hit a BP.
+    Returns the final status dict, or an error if timeout is reached.
+    """
+    import time
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        status = _client().call("status")
+        if status.get("paused"):
+            return status
+        time.sleep(poll_interval)
+    return {"error": f"Timeout ({timeout}s) waiting for breakpoint",
+            "last_status": _client().call("status")}
+
+
+@mcp.tool()
+def n64_export_trace(path: str, count: int = 0) -> dict[str, Any]:
+    """Export trace events to a JSON file.
+
+    path:   file path for the output JSON (e.g. "trace_export.json")
+    count:  number of recent events to export (0 = all events)
+    """
+    events = _client().call("get_trace_events", {"count": count})
+    import json as _json
+    with open(path, "w") as f:
+        _json.dump(events, f, indent=2)
+    return {"ok": True, "path": path, "events_written": len(events)}
+
+
 # ── entry point ────────────────────────────────────────────────
 
 
