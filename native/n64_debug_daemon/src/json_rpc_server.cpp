@@ -261,11 +261,10 @@ std::string JsonRpcServer::handleMethod(const std::string &method,
         if (size == 0) size = 64;
         if (size > 1048576) size = 1048576;
         auto data = mSession->readMemory(addr, size);
-        char buf[256];
-        snprintf(buf, sizeof(buf),
-                 "{\"address\":%s,\"size\":%u,\"hex\":%s}",
-                 hexStr(addr).c_str(), size, bytesToHex(data).c_str());
-        return formatResponse(id, buf);
+        std::string json = "{\"address\":" + hexStr(addr) +
+                           ",\"size\":" + std::to_string(size) +
+                           ",\"hex\":" + bytesToHex(data) + "}";
+        return formatResponse(id, json);
     }
     if (method == "write_mem") {
         if (!mSession->isMemoryWriteAllowed())
@@ -285,11 +284,10 @@ std::string JsonRpcServer::handleMethod(const std::string &method,
         uint32_t size = extractInt(paramsJson, "size");
         if (size == 0 || size > 0x800000) size = 0x800000;
         auto data = mSession->readMemory(0x80000000, size);
-        char buf[256];
-        snprintf(buf, sizeof(buf),
-                 "{\"address\":\"0x80000000\",\"size\":%u,\"hex\":%s}",
-                 (uint32_t)data.size(), bytesToHex(data, 4096).c_str());
-        return formatResponse(id, buf);
+        std::string json = "{\"address\":\"0x80000000\",\"size\":" +
+                           std::to_string(data.size()) + ",\"hex\":" +
+                           bytesToHex(data, 4096) + "}";
+        return formatResponse(id, json);
     }
     if (method == "translate_address") {
         uint32_t vaddr = extractHex(paramsJson, "vaddr");
