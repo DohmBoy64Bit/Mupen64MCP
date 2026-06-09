@@ -14,7 +14,7 @@ Mupen64MCP lets AI assistants (Claude Desktop, Cursor, etc.) inspect and control
              │ stdio (MCP protocol)         │
 ┌────────────▼─────────────────────────────▼───────┐
 │           n64-debug-mcp  (Python)                 │
-│  FastMCP server · 31 tools                        │
+│  FastMCP server · 36 tools                        │
 │  Thin translation layer → JSON-RPC                │
 └────────────┬─────────────────────────────┬───────┘
              │ TCP 127.0.0.1:9876           │
@@ -149,7 +149,7 @@ Add to your Cursor MCP config:
 }
 ```
 
-## MCP Tools (31 total)
+## MCP Tools (36 total)
 
 ### Lifecycle
 | Tool | Description |
@@ -294,10 +294,38 @@ D:\Mupen64MCP\
 - Only interpreter mode produces reliable debugger callbacks
 - Frame counter requires VI interrupts (dummy gfx plugins may not increment it)
 
-### Tested ROM
+### Tested ROMs
 - **Cruis'n USA** (NCUE) — CRC `FF2F2FB4 D161149A`, 8 MB
-- Custom Midway engine (no libultra — PIF jumps to `0x8011C450`, bypassing IPL3)
-- Custom F3DEX-based RSP microcode at ROM offset `0x31000`
+  - Custom Midway engine (PIF jumps to `0x8011C450`, bypassing IPL3)
+  - Custom F3DEX-based RSP microcode at ROM offset `0x31000`
+  - Boot flow: `PIF (0xA4000040)` → `0x80000000` trampoline → `0x80124C60` → `0x8011C450`
+- **Star Fox 64** (LZ-type) — CRC `BA780BA0 0F21DB34`, 12 MB
+  - Standard IPL3 boot (`0x80000400` entry)
+  - libultra functions detected: `osCreateThread @ 0x8001C3EC`, `osStartThread @ 0x80006FD8`, `osYieldThread @ 0x800049D4`
+
+### Comprehensive Test Results (55/55 PASS)
+All 36 MCP tools verified on Cruis'n USA in a single end-to-end test:
+
+| # | Test | Result |
+|---|------|--------|
+| 1 | Core connectivity (ping, status) | PASS |
+| 2 | CPU registers (32 GPRs, PC) | PASS |
+| 3 | Memory reads (ROM header, name, magic) | PASS |
+| 4 | Breakpoints (add, list, remove) | PASS |
+| 5 | Boot flow (entry BP → resume → hit → step past) | PASS |
+| 6 | Single-step through arbitrary MIPS code | PASS |
+| 7 | OS detection (libultra functions, boot type, ucode) | PASS |
+| 8 | RSP/SP memory, registers, task header | PASS |
+| 9 | PI DMA register capture | PASS |
+| 10 | Struct tracking (memory write watcher + BP escape) | PASS |
+| 11 | Callchain trace (200 events at context switch) | PASS |
+| 12 | Display list decode (F3DEX2 commands at 0x802C0000) | PASS |
+| 13 | Scheduler trace (100 ctx switches + 100 queue writes) | PASS |
+| 14 | Asset discovery (ROM/RDRAM scans) | PASS |
+| 15 | State labeling | PASS |
+| 16 | Virtual-to-physical address translation | PASS |
+| 17 | ROM read tracing (PI DMA) | PASS |
+| 18 | Cleanup (no stale breakpoints) | PASS |
 
 ### Asset Discovery (Cruis'n USA)
 Runtime ROM/RDRAM scans via debugger memory reads identified:
@@ -312,7 +340,7 @@ Runtime ROM/RDRAM scans via debugger memory reads identified:
 | `0x1C0000-0x7FFFFF` | Dense high-entropy data | Textures, levels, models |
 | `0x31000` | 8KB blob: 34% COP2, 19% LWC2 | **Custom F3DEX RSP microcode** |
 
-RDRAM after running to frame ~229:
+RDRAM after running to frame ~200:
 
 | Address | Contents | Identification |
 |---|---|---|
@@ -321,8 +349,6 @@ RDRAM after running to frame ~229:
 | `0x802C0000-0x802FFFFF` | `E6000000`, `BA000E02`, `BF...`, `F5500000` | **Active F3DEX display lists** |
 | `0x80330000` | `89868685...` | **CI8 palette data** |
 | `0x80340000` | `479E9E9E...` smooth gradient | **Texture color data** |
-
-Boot flow: `PIF (0xA4000040)` → `0x80000000` trampoline → `0x80124C60` → `0x8011C450` (game entry).
 
 ## License
 
