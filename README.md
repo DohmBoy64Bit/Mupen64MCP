@@ -14,7 +14,7 @@ Mupen64MCP lets AI assistants (Claude Desktop, Cursor, etc.) inspect and control
              │ stdio (MCP protocol)         │
 ┌────────────▼─────────────────────────────▼───────┐
 │           n64-debug-mcp  (Python)                 │
-│  FastMCP server · 36 tools                        │
+│  FastMCP server · 37 tools                        │
 │  Thin translation layer → JSON-RPC                │
 └────────────┬─────────────────────────────┬───────┘
              │ TCP 127.0.0.1:9876           │
@@ -72,7 +72,20 @@ cmake --build build
 
 This produces `native/n64_debug_daemon/build/n64-debug-daemon.exe`.
 
-### 3. Install Python MCP server
+### 3. Build input inject plugin
+
+The input injection plugin is built automatically alongside the daemon by `build.bat`.
+To build manually:
+
+```sh
+cd native/input_inject
+cmake -B build -DMUPEN64PLUS_DIR=../../build/mupen64plus
+cmake --build build
+```
+
+Output: `native/input_inject/build/mupen64plus-input-inject.dll`
+
+### 4. Install Python MCP server
 
 ```sh
 cd mcp/python
@@ -91,9 +104,23 @@ native/n64_debug_daemon/build/n64-debug-daemon.exe ^
   --rom roms/myrom.z64 ^
   --datadir build/mupen64plus/share ^
   --configdir build/mupen64plus/config ^
-  --gfx dummy --audio dummy --input dummy --rsp plugins\mupen64plus-rsp-hle.dll ^
-  --port 9876 ^
-  --allow-write-memory
+  --gfx dummy --audio dummy --input native/n64_debug_daemon/build/mupen64plus-input-inject.dll ^
+  --rsp dummy ^
+  --port 9876
+```
+
+For input injection, pass the path to `mupen64plus-input-inject.dll` as `--input`.
+Omit `--input` (or set `--input dummy`) to use the built-in dummy input plugin.
+
+### Injecting controller input
+
+```python
+# Via MCP tool:
+n64_set_controller(channel=0, buttons="START", sticky=False)      # one-shot press
+n64_set_controller(channel=0, buttons="A", x=80, y=0, sticky=True) # hold A + stick right
+
+# Symbolic button names: A B START Z L R U_DPAD D_DPAD L_DPAD R_DPAD U_C D_C L_C R_C
+# Raw hex: "0x0010" = START, "0x0080" = A, "0x1090" = A + R + START
 ```
 
 ### Run the MCP server (standalone)
@@ -149,7 +176,7 @@ Add to your Cursor MCP config:
 }
 ```
 
-## MCP Tools (36 total)
+## MCP Tools (37 total)
 
 ### Lifecycle
 | Tool | Description |
@@ -203,6 +230,11 @@ Add to your Cursor MCP config:
 | `n64_trace_scheduler` | RTOS scheduler tracer — context switch + run queue (takes addresses) |
 | `n64_detect_os` | Detect OS type (libultra/likely_libultra/custom_with_libultra_functions/custom), boot flow, RSP ucode, scheduler dispatch presence, thread function addresses, active PC context |
 
+### Input Injection
+| Tool | Description |
+|------|-------------|
+| `n64_set_controller` | Inject controller state (buttons, analog stick) into running emulator. Supports one-shot and sticky mode. Requires `mupen64plus-input-inject.dll` plugin. |
+
 ### Asset Discovery
 | Tool | Description |
 |------|-------------|
@@ -235,21 +267,25 @@ D:\Mupen64MCP\
 │   ├── server.py            # 36 MCP tools (FastMCP)
 │           └── daemon_client.py     # TCP JSON-RPC client
 ├── native/
-│   └── n64_debug_daemon/
+│   ├── n64_debug_daemon/
+│   │   ├── CMakeLists.txt
+│   │   ├── include/
+│   │   │   ├── daemon.h             # CoreAPI struct, types
+│   │   │   ├── emulator_session.h   # EmulatorSession class
+│   │   │   └── json_rpc_server.h    # TCP server
+│   │   ├── src/
+│   │   │   ├── main.cpp             # Entry point, arg parsing
+│   │   │   ├── emulator_session.cpp # Lifecycle, debug API wrappers
+│   │   │   ├── json_rpc_server.cpp  # TCP server + handlers
+│   │   │   ├── mupen_core_loader.cpp
+│   │   │   ├── memory.cpp
+│   │   │   ├── breakpoints.cpp
+│   │   │   └── tracing.cpp
+│   │   └── build/                   # CMake output
+│   └── input_inject/                # Input injection plugin (replaces dummy input)
 │       ├── CMakeLists.txt
-│       ├── include/
-│       │   ├── daemon.h             # CoreAPI struct, types
-│       │   ├── emulator_session.h   # EmulatorSession class
-│       │   └── json_rpc_server.h    # TCP server
-│       ├── src/
-│       │   ├── main.cpp             # Entry point, arg parsing
-│       │   ├── emulator_session.cpp # Lifecycle, debug API wrappers
-│       │   ├── json_rpc_server.cpp  # TCP server + handlers
-│       │   ├── mupen_core_loader.cpp
-│       │   ├── memory.cpp
-│       │   ├── breakpoints.cpp
-│       │   └── tracing.cpp
-│       └── build/                   # CMake output
+│       ├── plugin.h
+│       └── plugin.c
 ├── plugins/                         # Plugin DLLs
 ├── build/
 │   └── mupen64plus/                 # Mupen64Plus source + build
@@ -288,11 +324,13 @@ D:\Mupen64MCP\
 - Resume/step now correctly escapes breakpoint at current PC (temporarily removes BP to prevent re-catch in `update_debugger`)
 - Single-step advances PC correctly through arbitrary MIPS instructions including branches
 - **Runtime asset discovery**: non-invasive ROM/RDRAM scan identifies regions by content fingerprint
+- **Input injection**: custom `mupen64plus-input-inject.dll` plugin replaces the dummy input plugin. Exports `SetControllerState` for the daemon to call, stores 4 channels of `BUTTONS` state, supports one-shot and sticky modes. All required Mupen64Plus input plugin exports (`SDL_KeyDown`/`SDL_KeyUp`, `GetKeys`, `InitiateControllers`, etc.)
 
 ### Known Limitations
 - One TCP connection per request — no daemon-side blocking for `wait_for_breakpoint` (implemented as client-side poll loop)
 - Only interpreter mode produces reliable debugger callbacks
 - Frame counter requires VI interrupts (dummy gfx plugins may not increment it)
+- Input injection requires passing `--input path/to/mupen64plus-input-inject.dll` at daemon startup
 
 ### Tested ROMs
 - **Cruis'n USA** (NCUE) — CRC `FF2F2FB4 D161149A`, 8 MB

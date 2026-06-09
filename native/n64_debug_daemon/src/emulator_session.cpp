@@ -241,25 +241,6 @@ bool EmulatorSession::openRom(const std::string &romPath) {
     if (!file.read(buffer.data(), size)) return false;
     file.close();
 
-    // Call PluginStartup on each loaded plugin (skip dummy/no-handle)
-    auto startPlugin = [&](const PluginLib &p, m64p_plugin_type type) -> bool {
-        if (!p.startup) return true;
-        std::cerr << "PluginStartup type=" << type << "\n";
-        // Second parameter is a void* context for the debug callback (not m64p_plugin_type!)
-        // Pass NULL for now — plugins store this and forward it back to our debug callback
-        m64p_error r = p.startup(mCoreHandle, NULL, sDebugCallback);
-        std::cerr << "  result=" << r << "\n";
-        if (r != M64ERR_SUCCESS) {
-            std::cerr << "PluginStartup failed for type " << type << "\n";
-            return false;
-        }
-        return true;
-    };
-    if (!startPlugin(mPlugins.video, M64PLUGIN_GFX)) return false;
-    if (!startPlugin(mPlugins.audio, M64PLUGIN_AUDIO)) return false;
-    if (!startPlugin(mPlugins.input, M64PLUGIN_INPUT)) return false;
-    if (!startPlugin(mPlugins.rsp, M64PLUGIN_RSP)) return false;
-
     // Open ROM
     m64p_error rval = mAPI.CoreDoCommand(M64CMD_ROM_OPEN, (int)size, buffer.data());
     if (rval != M64ERR_SUCCESS) {
@@ -289,6 +270,13 @@ bool EmulatorSession::openRom(const std::string &romPath) {
     if (!attach(mPlugins.input, M64PLUGIN_INPUT)) return false;
     if (!attach(mPlugins.rsp, M64PLUGIN_RSP)) return false;
     std::cerr << "All plugins attached, setting debugger callbacks\n";
+
+    // Resolve SetControllerState from input plugin for injection
+    if (mPlugins.input.handle) {
+        mPlugins.input.setControllerState = (SetControllerStateFn)
+            getSymbol(mPlugins.input.handle, "SetControllerState");
+        std::cerr << "  input inject fn=" << (void*)mPlugins.input.setControllerState << "\n";
+    }
 
     // Set debugger callbacks if available
     if (isDebuggerAvailable()) {
@@ -339,6 +327,14 @@ void EmulatorSession::stopEmulation() {
         mEmulatorThread.join();
     }
     mEmuRunning = false;
+}
+
+void EmulatorSession::setControllerState(int channel, unsigned int buttons, signed char x, signed char y, int sticky) {
+    if (!mPlugins.input.setControllerState) {
+        std::cerr << "setControllerState: input plugin has no SetControllerState export\n";
+        return;
+    }
+    mPlugins.input.setControllerState(channel, buttons, x, y, sticky);
 }
 
 void EmulatorSession::pause() {

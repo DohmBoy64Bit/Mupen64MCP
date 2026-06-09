@@ -12,6 +12,7 @@ using PluginStartupFn = m64p_error (*)(void *, void *, void (*)(void *, int, con
 using PluginShutdownFn = m64p_error (*)(void);
 using PluginGetVersionFn = m64p_error (*)(
     m64p_plugin_type *, int *, int *, const char **, int *);
+using SetControllerStateFn = void (*)(int, unsigned int, signed char, signed char, int);
 
 struct PluginLib {
     std::string path;
@@ -19,6 +20,7 @@ struct PluginLib {
     PluginStartupFn startup = nullptr;
     PluginShutdownFn shutdown = nullptr;
     PluginGetVersionFn getVersion = nullptr;
+    SetControllerStateFn setControllerState = nullptr; // input injection
 };
 
 struct PluginSet {

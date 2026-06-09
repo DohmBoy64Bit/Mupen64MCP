@@ -76,6 +76,9 @@ public:
     void setAllowMemoryWrite(bool allow) { mAllowMemoryWrite = allow; }
     bool isMemoryWriteAllowed() const { return mAllowMemoryWrite; }
 
+    // Input injection
+    void setControllerState(int channel, unsigned int buttons, signed char x, signed char y, int sticky);
+
     // Config
     void setConfigDir(const std::string &dir) { mConfigDir = dir; }
     void setDataDir(const std::string &dir) { mDataDir = dir; }

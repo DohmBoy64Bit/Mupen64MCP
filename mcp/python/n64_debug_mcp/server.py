@@ -41,12 +41,14 @@ def n64_start_daemon(
     config_dir: str = "",
     port: int = 9876,
     allow_write: bool = False,
+    input_path: str = "",
 ) -> dict[str, Any]:
     """Start the native n64-debug-daemon subprocess and connect to it.
 
     core_path: path to mupen64plus.dll
     rom_path:  optional path to a .z64 ROM to load immediately
     port:      TCP port for JSON-RPC (default 9876)
+    input_path: path to input plugin DLL (default: built-in dummy)
     """
     global _daemon
     if _daemon is not None:
@@ -59,6 +61,7 @@ def n64_start_daemon(
         config_dir=_resolve_path(config_dir) if config_dir else None,
         port=port,
         allow_write=allow_write,
+        input=_resolve_path(input_path) if input_path else "dummy",
     )
     _daemon = DaemonClient(cfg)
     _daemon.start()
@@ -620,6 +623,62 @@ def n64_dl_decode(address: str, size: int = 256) -> dict[str, Any]:
             break
 
     return {"address": address, "command_count": len(cmds), "commands": cmds}
+
+
+# ── input injection ─────────────────────────────────────────────
+
+
+# N64 button values from the BUTTONS bitfield (m64p_plugin.h)
+BUTTON_VALUES: dict[str, int] = {
+    "R_DPAD": 1 << 0,
+    "L_DPAD": 1 << 1,
+    "D_DPAD": 1 << 2,
+    "U_DPAD": 1 << 3,
+    "START":  1 << 4,
+    "Z":      1 << 5,
+    "B":      1 << 6,
+    "A":      1 << 7,
+    "R_C":    1 << 8,
+    "L_C":    1 << 9,
+    "D_C":    1 << 10,
+    "U_C":    1 << 11,
+    "R":      1 << 12,
+    "L":      1 << 13,
+}
+
+@mcp.tool()
+def n64_set_controller(
+    channel: int = 0,
+    buttons: str = "",
+    x: int = 0,
+    y: int = 0,
+    sticky: bool = False,
+) -> dict[str, Any]:
+    """Inject controller state into the running emulator.
+
+    channel: controller port (0-3, default 0)
+    buttons: space-separated button names, e.g. "A START Z"
+             Names: A B START Z L R U_DPAD D_DPAD L_DPAD R_DPAD
+                    U_C D_C L_C R_C
+             Or a raw hex value like "0x00A0"
+    x: analog stick X (-128..127, default 0)
+    y: analog stick Y (-128..127, default 0)
+    sticky: if True, state persists across frames until explicitly
+            changed or cleared (default False — one-shot)
+    """
+    if buttons.startswith("0x"):
+        raw = int(buttons, 16)
+    else:
+        raw = 0
+        for name in buttons.upper().split():
+            name = name.strip()
+            if name in BUTTON_VALUES:
+                raw |= BUTTON_VALUES[name]
+    x_clamped = max(-128, min(127, x))
+    y_clamped = max(-128, min(127, y))
+    return _client().call("set_controller_state", {
+        "channel": channel, "buttons": raw, "x": x_clamped, "y": y_clamped, "sticky": sticky,
+    })
 
 
 # ── entry point ────────────────────────────────────────────────

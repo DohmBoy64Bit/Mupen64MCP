@@ -20,6 +20,7 @@ class DaemonConfig:
     audio: str = "dummy"
     input: str = "dummy"
     rsp: str = "dummy"
+
     port: int = 9876
     host: str = "127.0.0.1"
     allow_write: bool = False

@@ -645,6 +645,17 @@ std::string JsonRpcServer::handleMethod(const std::string &method,
         return formatResponse(id, "{\"ok\":true}");
     }
 
+    // Input injection
+    if (method == "set_controller_state") {
+        int channel = extractInt(paramsJson, "channel");
+        unsigned int buttons = (unsigned int)extractHex(paramsJson, "buttons");
+        signed char x = (signed char)extractInt(paramsJson, "x");
+        signed char y = (signed char)extractInt(paramsJson, "y");
+        int sticky = extractBool(paramsJson, "sticky") ? 1 : 0;
+        mSession->setControllerState(channel, buttons, x, y, sticky);
+        return formatResponse(id, "{\"ok\":true}");
+    }
+
     // CPU queries
     if (method == "get_pc") {
         return formatResponse(id, hexStr(mSession->getPC()));

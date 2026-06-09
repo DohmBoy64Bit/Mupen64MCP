@@ -36,4 +36,16 @@ echo Linking...
 g++ -std=c++17 "%OBJ_DIR%\*.cpp.obj" -o "%BUILD_DIR%\n64-debug-daemon.exe" -lws2_32
 if %errorlevel% neq 0 exit /b %errorlevel%
 
+echo.
+echo Building input_inject plugin DLL...
+set INPUT_INJECT_DIR=%~dp0..\input_inject
+set INPUT_INJECT_BUILD=%BUILD_DIR%
+
+gcc -c "%INPUT_INJECT_DIR%\plugin.c" -I"%INPUT_INJECT_DIR%" -I"%MUPEN_DIR%" -o "%OBJ_DIR%\input_inject.obj"
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+gcc "%OBJ_DIR%\input_inject.obj" -shared -o "%INPUT_INJECT_BUILD%\mupen64plus-input-inject.dll" -Wl,--out-implib,"%INPUT_INJECT_BUILD%\libmupen64plus-input-inject.a"
+if %errorlevel% neq 0 exit /b %errorlevel%
+
 echo Build successful: %BUILD_DIR%\n64-debug-daemon.exe
+echo Input inject plugin: %INPUT_INJECT_BUILD%\mupen64plus-input-inject.dll
