@@ -276,6 +276,7 @@ D:\Mupen64MCP\
 - Verified boot flow, register access, stepping, and memory reads on Cruis'n USA
 - Resume/step now correctly escapes breakpoint at current PC (temporarily removes BP to prevent re-catch in `update_debugger`)
 - Single-step advances PC correctly through arbitrary MIPS instructions including branches
+- **Runtime asset discovery**: non-invasive ROM/RDRAM scan identifies regions by content fingerprint
 
 ### Known Limitations
 - One TCP connection per request — no daemon-side blocking for `wait_for_breakpoint` (implemented as client-side poll loop)
@@ -286,6 +287,31 @@ D:\Mupen64MCP\
 - **Cruis'n USA** (NCUE) — CRC `FF2F2FB4 D161149A`, 8 MB
 - Custom Midway engine (no libultra — PIF jumps to `0x8011C450`, bypassing IPL3)
 - Custom F3DEX-based RSP microcode at ROM offset `0x31000`
+
+### Asset Discovery (Cruis'n USA)
+Runtime ROM/RDRAM scans via debugger memory reads identified:
+
+| ROM Offset | Contents | Identification |
+|---|---|---|
+| `0x000000` | `80371240` magic, CRC, "Cruis'n USA", "NCUE" | N64 ROM header |
+| `0x001000` | Memory clear loop → boot init | IPL3 / boot code |
+| `0x040000-0x0BFFFF` | MIPS instructions (`3C0A8001...`) | Game code (~512 KB) |
+| `0x0C0000` | `63634E4E` ("ccNN") | Data segment |
+| `0x180000` | `73E5 73E5 73E5 6BE7...` repeating | **ADPCM audio data** |
+| `0x1C0000-0x7FFFFF` | Dense high-entropy data | Textures, levels, models |
+| `0x31000` | 8KB blob: 34% COP2, 19% LWC2 | **Custom F3DEX RSP microcode** |
+
+RDRAM after running to frame ~229:
+
+| Address | Contents | Identification |
+|---|---|---|
+| `0x80000000` | `3C1A8012 275A4C60 03400008` → `jr 0x80124C60` | **Reset trampoline** |
+| `0x80000000-0x801FFFFF` | MIPS instructions | Loaded game code |
+| `0x802C0000-0x802FFFFF` | `E6000000`, `BA000E02`, `BF...`, `F5500000` | **Active F3DEX display lists** |
+| `0x80330000` | `89868685...` | **CI8 palette data** |
+| `0x80340000` | `479E9E9E...` smooth gradient | **Texture color data** |
+
+Boot flow: `PIF (0xA4000040)` → `0x80000000` trampoline → `0x80124C60` → `0x8011C450` (game entry).
 
 ## License
 
