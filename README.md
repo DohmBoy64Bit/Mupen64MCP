@@ -14,7 +14,7 @@ Mupen64MCP lets AI assistants (Claude Desktop, Cursor, etc.) inspect and control
              │ stdio (MCP protocol)         │
 ┌────────────▼─────────────────────────────▼───────┐
 │           n64-debug-mcp  (Python)                 │
-│  FastMCP server · 37 tools                        │
+│  FastMCP server · 38 tools                        │
 │  Thin translation layer → JSON-RPC                │
 └────────────┬─────────────────────────────┬───────┘
              │ TCP 127.0.0.1:9876           │
@@ -123,6 +123,14 @@ n64_set_controller(channel=0, buttons="A", x=80, y=0, sticky=True) # hold A + st
 # Raw hex: "0x0010" = START, "0x0080" = A, "0x1090" = A + R + START
 ```
 
+### Launch the status dashboard
+
+```sh
+n64-viewer
+```
+
+Shows live frame counter, PC, VI register state, and game data from RDRAM in a simple tkinter window. Connects to an already-running daemon.
+
 ### Run the MCP server (standalone)
 
 ```sh
@@ -176,7 +184,7 @@ Add to your Cursor MCP config:
 }
 ```
 
-## MCP Tools (37 total)
+## MCP Tools (38 total)
 
 ### Lifecycle
 | Tool | Description |
@@ -235,6 +243,11 @@ Add to your Cursor MCP config:
 |------|-------------|
 | `n64_set_controller` | Inject controller state (buttons, analog stick) into running emulator. Supports one-shot and sticky mode. Requires `mupen64plus-input-inject.dll` plugin. |
 
+### Framebuffer
+| Tool | Description |
+|------|-------------|
+| `n64_read_framebuffer` | Read current framebuffer via VI registers. Returns width/height/bpp and raw pixel data. Pixels are zero with dummy gfx plugin (requires real video plugin for rendered output). |
+
 ### Asset Discovery
 | Tool | Description |
 |------|-------------|
@@ -264,8 +277,9 @@ D:\Mupen64MCP\
 │       ├── pyproject.toml           # Python package config
 │       └── n64_debug_mcp/
 │           ├── __init__.py
-│   ├── server.py            # 36 MCP tools (FastMCP)
-│           └── daemon_client.py     # TCP JSON-RPC client
+│           ├── server.py            # 38 MCP tools (FastMCP)
+│           ├── daemon_client.py     # TCP JSON-RPC client
+│           └── n64_viewer.py        # Live status dashboard (tkinter)
 ├── native/
 │   ├── n64_debug_daemon/
 │   │   ├── CMakeLists.txt
@@ -325,6 +339,8 @@ D:\Mupen64MCP\
 - Single-step advances PC correctly through arbitrary MIPS instructions including branches
 - **Runtime asset discovery**: non-invasive ROM/RDRAM scan identifies regions by content fingerprint
 - **Input injection**: custom `mupen64plus-input-inject.dll` plugin replaces the dummy input plugin. Exports `SetControllerState` for the daemon to call, stores 4 channels of `BUTTONS` state, supports one-shot and sticky modes. All required Mupen64Plus input plugin exports (`SDL_KeyDown`/`SDL_KeyUp`, `GetKeys`, `InitiateControllers`, etc.)
+- **Framebuffer capture**: reads VI registers and RDRAM framebuffer via `read_framebuffer`. Requires a real video plugin for rendered pixel data (with dummy gfx, the RDP never processes display lists and the framebuffer stays zero).
+- **n64-viewer**: live status dashboard showing frame counter, PC, VI registers, and RDRAM game data. Launched via `n64-viewer` command.
 
 ### Known Limitations
 - One TCP connection per request — no daemon-side blocking for `wait_for_breakpoint` (implemented as client-side poll loop)

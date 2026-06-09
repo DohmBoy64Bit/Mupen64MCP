@@ -656,6 +656,21 @@ std::string JsonRpcServer::handleMethod(const std::string &method,
         return formatResponse(id, "{\"ok\":true}");
     }
 
+    // Framebuffer
+    if (method == "read_framebuffer") {
+        uint32_t w = 0, h = 0;
+        int bpp = 0;
+        auto pixels = mSession->readFramebuffer(w, h, bpp);
+        if (pixels.empty())
+            return formatError(id, -32000, "No framebuffer available");
+        std::string json = "{\"width\":" + std::to_string(w) +
+                           ",\"height\":" + std::to_string(h) +
+                           ",\"bpp\":" + std::to_string(bpp) +
+                           ",\"size\":" + std::to_string(pixels.size()) +
+                           ",\"pixels\":" + bytesToHex(pixels) + "}";
+        return formatResponse(id, json);
+    }
+
     // CPU queries
     if (method == "get_pc") {
         return formatResponse(id, hexStr(mSession->getPC()));

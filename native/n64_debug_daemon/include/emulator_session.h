@@ -72,6 +72,11 @@ public:
     struct PiDmaRegs { uint32_t dramAddr; uint32_t cartAddr; uint32_t rdLen; uint32_t wrLen; uint32_t status; };
     PiDmaRegs readPiDmaRegs();
 
+    // Framebuffer
+    struct ViRegs { uint32_t status; uint32_t origin; uint32_t width; uint32_t vIntr; uint32_t vCurrentLine; };
+    ViRegs readViRegs();
+    std::vector<uint8_t> readFramebuffer(uint32_t &outWidth, uint32_t &outHeight, int &outBpp);
+
     // Safety
     void setAllowMemoryWrite(bool allow) { mAllowMemoryWrite = allow; }
     bool isMemoryWriteAllowed() const { return mAllowMemoryWrite; }

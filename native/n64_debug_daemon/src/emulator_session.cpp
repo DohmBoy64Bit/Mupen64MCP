@@ -646,6 +646,41 @@ EmulatorSession::PiDmaRegs EmulatorSession::readPiDmaRegs() {
     return regs;
 }
 
+EmulatorSession::ViRegs EmulatorSession::readViRegs() {
+    ViRegs regs = {0, 0, 0, 0, 0};
+    if (!mCoreLoaded || !isDebuggerAvailable()) return regs;
+    regs.status       = mAPI.DebugMemRead32(0xA4400000);
+    regs.origin       = mAPI.DebugMemRead32(0xA4400004);
+    regs.width        = mAPI.DebugMemRead32(0xA4400008);
+    regs.vIntr        = mAPI.DebugMemRead32(0xA440000C);
+    regs.vCurrentLine = mAPI.DebugMemRead32(0xA4400010);
+    return regs;
+}
+
+std::vector<uint8_t> EmulatorSession::readFramebuffer(uint32_t &outWidth, uint32_t &outHeight, int &outBpp) {
+    outWidth = 0; outHeight = 0; outBpp = 0;
+    if (!mCoreLoaded || !isDebuggerAvailable()) return {};
+
+    ViRegs vi = readViRegs();
+    if (vi.origin == 0) return {};  // no framebuffer set
+
+    // Determine pixel format from VI_STATUS bit 0
+    // 0 = 32-bit (RGBA8888), 1 = 16-bit (RGBA5551)
+    // Mupen64Plus VI_WIDTH is in 32-bit words; convert to pixels
+    outBpp = (vi.status & 1) ? 2 : 4;
+    outWidth = (vi.width * 4) / outBpp;
+
+    // Height: typically 240 for NTSC, 288 for PAL
+    // Detect PAL via VI_STATUS bit 7
+    outHeight = (vi.status & 0x80) ? 288 : 240;
+
+    // Convert physical framebuffer address to KSEG0 virtual
+    uint32_t fbVaddr = (vi.origin & 0x00FFFFFF) | 0x80000000;
+
+    uint32_t totalBytes = outWidth * outHeight * outBpp;
+    return readMemory(fbVaddr, totalBytes);
+}
+
 std::vector<TraceEvent> EmulatorSession::getRecentEvents(uint32_t count) {
     std::lock_guard<std::mutex> lock(mEventMutex);
     if (count == 0 || count >= mEvents.size()) return mEvents;

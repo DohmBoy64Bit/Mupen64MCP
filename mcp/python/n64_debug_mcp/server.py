@@ -591,6 +591,16 @@ def n64_export_manifest(path: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+def n64_read_framebuffer() -> dict[str, Any]:
+    """Read the current N64 framebuffer from RDRAM via VI registers.
+
+    Returns width, height, bytes-per-pixel (2=RGBA5551, 4=RGBA8888),
+    and the raw pixel data as hex. Use n64_viewer.py to display.
+    """
+    return _client().call("read_framebuffer")
+
+
+@mcp.tool()
 def n64_dl_decode(address: str, size: int = 256) -> dict[str, Any]:
     """Read a display list from memory and decode each GBI command.
 

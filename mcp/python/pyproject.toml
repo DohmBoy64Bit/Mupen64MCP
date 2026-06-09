@@ -11,6 +11,7 @@ dependencies = ["mcp>=1.0.0"]
 
 [project.scripts]
 n64-debug-mcp = "n64_debug_mcp.server:main"
+n64-viewer = "n64_debug_mcp.n64_viewer:main"
 
 [tool.setuptools.packages.find]
 include = ["n64_debug_mcp*"]
