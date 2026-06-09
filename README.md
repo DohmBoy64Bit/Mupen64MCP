@@ -123,13 +123,17 @@ n64_set_controller(channel=0, buttons="A", x=80, y=0, sticky=True) # hold A + st
 # Raw hex: "0x0010" = START, "0x0080" = A, "0x1090" = A + R + START
 ```
 
-### Launch the status dashboard
+### Launch the status dashboard (optional)
 
 ```sh
 n64-viewer
 ```
 
-Shows live frame counter, PC, VI register state, and game data from RDRAM in a simple tkinter window. Connects to an already-running daemon.
+A standalone tkinter window that connects to an already-running daemon.
+Shows live status, scene detection, speed/steering gauges, a 2D track
+position trail, labeled game state fields, a live event feed, and quick
+input injection buttons. The Game Data section is currently game-specific
+to Cruis'n USA (addresses from `0x8013A000`). Launched via `n64-viewer`.
 
 ### Run the MCP server (standalone)
 
@@ -340,7 +344,7 @@ D:\Mupen64MCP\
 - **Runtime asset discovery**: non-invasive ROM/RDRAM scan identifies regions by content fingerprint
 - **Input injection**: custom `mupen64plus-input-inject.dll` plugin replaces the dummy input plugin. Exports `SetControllerState` for the daemon to call, stores 4 channels of `BUTTONS` state, supports one-shot and sticky modes. All required Mupen64Plus input plugin exports (`SDL_KeyDown`/`SDL_KeyUp`, `GetKeys`, `InitiateControllers`, etc.)
 - **Framebuffer capture**: reads VI registers and RDRAM framebuffer via `read_framebuffer`. Requires a real video plugin for rendered pixel data (with dummy gfx, the RDP never processes display lists and the framebuffer stays zero).
-- **n64-viewer**: live status dashboard showing frame counter, PC, VI registers, and RDRAM game data. Launched via `n64-viewer` command.
+- **n64-viewer** (optional): standalone live status dashboard with scene detection (PC-range heuristic), labeled game state display, speed/steering gauges, 2D track position trail, event feed, and input injection buttons. Game Data section is Cruis'n USA-specific. Launched via `n64-viewer`.
 
 ### Known Limitations
 - One TCP connection per request — no daemon-side blocking for `wait_for_breakpoint` (implemented as client-side poll loop)
