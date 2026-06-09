@@ -8,7 +8,7 @@
 #include <m64p_types.h>
 
 // Convenience: host pointer to plugin startup/shutdown
-using PluginStartupFn = m64p_error (*)(m64p_handle, m64p_plugin_type, void (*)(void *, int, const char *));
+using PluginStartupFn = m64p_error (*)(void *, void *, void (*)(void *, int, const char *));
 using PluginShutdownFn = m64p_error (*)(void);
 using PluginGetVersionFn = m64p_error (*)(
     m64p_plugin_type *, int *, int *, const char **, int *);

@@ -91,7 +91,7 @@ native/n64_debug_daemon/build/n64-debug-daemon.exe ^
   --rom roms/myrom.z64 ^
   --datadir build/mupen64plus/share ^
   --configdir build/mupen64plus/config ^
-  --gfx dummy --audio dummy --input dummy --rsp dummy ^
+  --gfx dummy --audio dummy --input dummy --rsp plugins\mupen64plus-rsp-hle.dll ^
   --port 9876 ^
   --allow-write-memory
 ```
@@ -255,7 +255,7 @@ D:\Mupen64MCP\
 
 ### Implemented
 - Mupen64Plus core built from source with DEBUGGER flag
-- Four plugins compiled and loaded (video-rice, audio-sdl, input-sdl, **rsp-hle**)
+- Four plugins compiled; RSP-HLE loads via CoreAttachPlugin (fixed: PluginStartup context param must be `void*`, not `m64p_plugin_type`)
 - SP memory (DMEM/IMEM) and register reads via debugger — inspect RSP task headers and status without plugin attachment
 - Native daemon: core loading, plugin lifecycle, debug API, breakpoints, memory R/W, tracing
 - Config auto-set: `EnableDebugger=1`, `R4300Emulator=0` (Pure Interpreter)

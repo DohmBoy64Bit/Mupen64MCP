@@ -245,7 +245,9 @@ bool EmulatorSession::openRom(const std::string &romPath) {
     auto startPlugin = [&](const PluginLib &p, m64p_plugin_type type) -> bool {
         if (!p.startup) return true;
         std::cerr << "PluginStartup type=" << type << "\n";
-        m64p_error r = p.startup(mCoreHandle, type, sDebugCallback);
+        // Second parameter is a void* context for the debug callback (not m64p_plugin_type!)
+        // Pass NULL for now — plugins store this and forward it back to our debug callback
+        m64p_error r = p.startup(mCoreHandle, NULL, sDebugCallback);
         std::cerr << "  result=" << r << "\n";
         if (r != M64ERR_SUCCESS) {
             std::cerr << "PluginStartup failed for type " << type << "\n";
@@ -273,7 +275,8 @@ bool EmulatorSession::openRom(const std::string &romPath) {
     auto attach = [&](const PluginLib &p, m64p_plugin_type type) -> bool {
         m64p_dynlib_handle h = (m64p_dynlib_handle)p.handle;
         std::cerr << "CoreAttachPlugin type=" << type << " handle=" << h << "\n";
-        m64p_error r = mAPI.CoreAttachPlugin(type, h);
+        m64p_error r = M64ERR_INTERNAL;
+        r = mAPI.CoreAttachPlugin(type, h);
         std::cerr << "  result=" << r << "\n";
         if (r != M64ERR_SUCCESS) {
             std::cerr << "CoreAttachPlugin failed for type " << type << "\n";
@@ -285,7 +288,6 @@ bool EmulatorSession::openRom(const std::string &romPath) {
     if (!attach(mPlugins.audio, M64PLUGIN_AUDIO)) return false;
     if (!attach(mPlugins.input, M64PLUGIN_INPUT)) return false;
     if (!attach(mPlugins.rsp, M64PLUGIN_RSP)) return false;
-
     std::cerr << "All plugins attached, setting debugger callbacks\n";
 
     // Set debugger callbacks if available
