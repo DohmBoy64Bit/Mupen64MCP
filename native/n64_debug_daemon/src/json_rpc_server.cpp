@@ -320,7 +320,7 @@ std::string JsonRpcServer::handleDetectOs(int id) {
         romEntry = (uint32_t)headerData[8] << 24 | headerData[9] << 16 | headerData[10] << 8 | headerData[11];
         uint32_t crc1 = (uint32_t)headerData[16] << 24 | headerData[17] << 16 | headerData[18] << 8 | headerData[19];
         uint32_t crc2 = (uint32_t)headerData[20] << 24 | headerData[21] << 16 | headerData[22] << 8 | headerData[23];
-        uint8_t country = headerData[63];
+        uint8_t country = headerData[62];
         const char *countryStr = "unknown";
         if (country == 0x44) countryStr = "Germany";
         else if (country == 0x45) countryStr = "USA";
