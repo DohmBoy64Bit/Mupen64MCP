@@ -53,14 +53,25 @@ Mupen64MCP lets AI assistants (Claude Desktop, Cursor, etc.) inspect and control
 
 ### 1. Build Mupen64Plus Core (with DEBUGGER)
 
+Use the Unix Makefile in MINGW64 shell:
+
 ```sh
-# From project root
-cd build
-cmake -G "MSYS Makefiles" .. -DCMAKE_BUILD_TYPE=Debug -DNO_ASM=1
-make -j$(nproc)
+cd build/mupen64plus/mupen64plus-core/projects/unix
+make clean
+make all VULKAN=0 NO_ASM=1 DEBUGGER=1
 ```
 
-This produces `build/mupen64plus/lib/mupen64plus.dll` with the debugger API enabled.
+This produces `mupen64plus.dll` with the debugger API enabled. Copy it to the lib folder:
+
+```sh
+cp mupen64plus.dll ../../lib/
+```
+
+**Build flags:**
+- `VULKAN=0` — disable Vulkan (avoids missing headers)
+- `NO_ASM=1` — pure interpreter mode (required for reliable debugger breakpoints)
+- `DEBUGGER=1` — enables the debugger API (`-DDBG`)
+- `M64P_PARALLEL` — already set by default for parallel builds
 
 ### 2. Build native daemon
 
@@ -72,7 +83,24 @@ cmake --build build
 
 This produces `native/n64_debug_daemon/build/n64-debug-daemon.exe`.
 
-### 3. Build input inject plugin
+### 3. Build video plugin (Rice — optional, for real framebuffer)
+
+If you want rendered pixels (not just RDRAM framebuffer), build the Rice video plugin:
+
+```sh
+cd build/mupen64plus/mupen64plus-video-rice/projects/unix
+make all
+```
+
+Copy the DLL to the plugins folder:
+
+```sh
+cp mupen64plus-video-rice.dll ../../../../plugins/
+```
+
+The daemon auto-configures `Video-Rice` → `FrameBufferSetting=3` (writeback) so `n64_read_framebuffer` returns actual pixel data.
+
+### 4. Build input inject plugin
 
 The input injection plugin is built automatically alongside the daemon by `build.bat`.
 To build manually:
@@ -99,6 +127,7 @@ uv sync
 ### Start the daemon
 
 ```sh
+# Headless (dummy plugins) — best for debugging & reversing
 native/n64_debug_daemon/build/n64-debug-daemon.exe ^
   --core build/mupen64plus/lib/mupen64plus.dll ^
   --rom roms/myrom.z64 ^
@@ -106,6 +135,18 @@ native/n64_debug_daemon/build/n64-debug-daemon.exe ^
   --configdir build/mupen64plus/config ^
   --gfx dummy --audio dummy --input native/n64_debug_daemon/build/mupen64plus-input-inject.dll ^
   --rsp dummy ^
+  --port 9876
+
+# With real video rendering (Rice + RSP-HLE) — for framebuffer capture
+native/n64_debug_daemon/build/n64-debug-daemon.exe ^
+  --core build/mupen64plus/lib/mupen64plus.dll ^
+  --rom roms/myrom.z64 ^
+  --datadir build/mupen64plus/share ^
+  --configdir build/mupen64plus/config ^
+  --gfx plugins/mupen64plus-video-rice.dll ^
+  --audio dummy ^
+  --input native/n64_debug_daemon/build/mupen64plus-input-inject.dll ^
+  --rsp plugins/mupen64plus-rsp-hle.dll ^
   --port 9876
 ```
 
@@ -325,14 +366,15 @@ D:\Mupen64MCP\
 ## Development Status
 
 ### Implemented
-- Mupen64Plus core built from source with DEBUGGER flag
-- Four plugins compiled; RSP-HLE loads via CoreAttachPlugin (fixed: PluginStartup context param must be `void*`, not `m64p_plugin_type`)
+- Mupen64Plus core built from source with `DEBUGGER=1` and `NO_ASM=1` (interpreter only)
+- Rice video plugin built and working with real OpenGL rendering
+- RSP-HLE plugin loads via CoreAttachPlugin (fixed: PluginStartup context param must be `void*`, not `m64p_plugin_type`)
 - SP memory (DMEM/IMEM) and register reads via debugger — inspect RSP task headers and status without plugin attachment
 - Native daemon: core loading, plugin lifecycle, debug API, breakpoints, memory R/W, tracing
-- Config auto-set: `EnableDebugger=1`, `R4300Emulator=0` (Pure Interpreter)
+- Config auto-set: `EnableDebugger=1`, `R4300Emulator=0` (Pure Interpreter), `Video-Rice.FrameBufferSetting=3`
 - `onDebuggerUpdate` callback propagates pause state via semaphore
 - JSON-RPC over TCP with space-tolerant parser
-- 36 MCP tools via FastMCP
+- 38 MCP tools via FastMCP
 - Python daemon client with one-connection-per-call pattern
 - Breakpoint → resume → wait loop for runtime debugging
 - ROM-read DMA tracing (PI register capture)
@@ -343,7 +385,7 @@ D:\Mupen64MCP\
 - Single-step advances PC correctly through arbitrary MIPS instructions including branches
 - **Runtime asset discovery**: non-invasive ROM/RDRAM scan identifies regions by content fingerprint
 - **Input injection**: custom `mupen64plus-input-inject.dll` plugin replaces the dummy input plugin. Exports `SetControllerState` for the daemon to call, stores 4 channels of `BUTTONS` state, supports one-shot and sticky modes. All required Mupen64Plus input plugin exports (`SDL_KeyDown`/`SDL_KeyUp`, `GetKeys`, `InitiateControllers`, etc.)
-- **Framebuffer capture**: reads VI registers and RDRAM framebuffer via `read_framebuffer`. Requires a real video plugin for rendered pixel data (with dummy gfx, the RDP never processes display lists and the framebuffer stays zero).
+- **Framebuffer capture**: reads VI registers and RDRAM framebuffer via `read_framebuffer`. With dummy gfx, the RDP never processes display lists and the framebuffer stays zero. With Rice video + RSP-HLE, the framebuffer contains actual rendered pixels (daemon auto-sets `Video-Rice.FrameBufferSetting=3` for writeback).
 - **n64-viewer** (optional): standalone live status dashboard with scene detection (PC-range heuristic), labeled game state display, speed/steering gauges, 2D track position trail, event feed, and input injection buttons. Game Data section is Cruis'n USA-specific. Launched via `n64-viewer`.
 
 ### Known Limitations
@@ -361,8 +403,8 @@ D:\Mupen64MCP\
   - Standard IPL3 boot (`0x80000400` entry)
   - libultra functions detected: `osCreateThread @ 0x8001C3EC`, `osStartThread @ 0x80006FD8`, `osYieldThread @ 0x800049D4`
 
-### Comprehensive Test Results (55/55 PASS)
-All 36 MCP tools verified on Cruis'n USA in a single end-to-end test:
+### Comprehensive Test Results (53/54 PASS)
+All 38 MCP tools verified on Cruis'n USA in a single end-to-end test:
 
 | # | Test | Result |
 |---|------|--------|
@@ -378,10 +420,16 @@ All 36 MCP tools verified on Cruis'n USA in a single end-to-end test:
 | 10 | Struct tracking (memory write watcher + BP escape) | PASS |
 | 11 | Callchain trace (200 events at context switch) | PASS |
 | 12 | Display list decode (F3DEX2 commands at 0x802C0000) | PASS |
-| 13 | Scheduler trace (100 ctx switches + 100 queue writes) | PASS |
+| 13 | Scheduler trace (100 ctx switches + 100 queue writes) | PASS* |
 | 14 | Asset discovery (ROM/RDRAM scans) | PASS |
 | 15 | State labeling | PASS |
 | 16 | Virtual-to-physical address translation | PASS |
+| 17 | ROM read tracing (PI DMA) | PASS |
+| 18 | Cleanup (no stale breakpoints) | PASS |
+| 19 | Framebuffer capture (Rice + RSP-HLE) | PASS |
+| 20 | Input injection (A/B/START with sticky) | PASS |
+
+\* Queue-write detection (0 events) is a known limitation — scheduler context switches are captured correctly.
 | 17 | ROM read tracing (PI DMA) | PASS |
 | 18 | Cleanup (no stale breakpoints) | PASS |
 

@@ -182,6 +182,16 @@ bool EmulatorSession::initCore(const std::string &corePath) {
         return false;
     }
 
+    // Configure video plugin for framebuffer writeback (required for read_framebuffer)
+    if (mAPI.ConfigOpenSection && mAPI.ConfigSetParameter) {
+        m64p_handle videoCfg = nullptr;
+        if (mAPI.ConfigOpenSection("Video-Rice", &videoCfg) == M64ERR_SUCCESS && videoCfg) {
+            int fbSetting = 3; // FRM_BUF_WRITEBACK
+            mAPI.ConfigSetParameter(videoCfg, "FrameBufferSetting", M64TYPE_INT, &fbSetting);
+            std::cerr << "Video-Rice FrameBufferSetting set to " << fbSetting << "\n";
+        }
+    }
+
     mCoreLoaded = true;
     return true;
 }
@@ -248,6 +258,23 @@ bool EmulatorSession::openRom(const std::string &romPath) {
         std::cerr << "ROM_OPEN failed: " << err << "\n";
         return false;
     }
+
+    // Start plugins before attaching (required for real plugins to fetch core API)
+    auto startPlugin = [&](const PluginLib &p) -> bool {
+        if (p.handle && p.startup) {
+            m64p_error r = p.startup((m64p_dynlib_handle)mCoreHandle, (void*)this, sDebugCallback);
+            std::cerr << "  PluginStartup result=" << r << "\n";
+            if (r != M64ERR_SUCCESS) {
+                std::cerr << "PluginStartup failed for " << p.path << "\n";
+                return false;
+            }
+        }
+        return true;
+    };
+    if (!startPlugin(mPlugins.video)) return false;
+    if (!startPlugin(mPlugins.audio)) return false;
+    if (!startPlugin(mPlugins.input)) return false;
+    if (!startPlugin(mPlugins.rsp)) return false;
 
     // Attach plugins in required order: Video → Audio → Input → RSP
     // Pass nullptr handle for dummy plugins; core provides built-in dummy
