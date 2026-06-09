@@ -259,11 +259,17 @@ static std::string regionJson(const char *addrLabel, uint32_t address, uint32_t 
 }
 
 // ── OS detection ─────────────────────────────────────────────
-static std::string osTypeFromPatterns(bool hasLibultra, int customCount) {
-    if (hasLibultra) return "libultra";
-    if (customCount >= 2) return "custom";
-    if (customCount > 0) return "likely_custom";
-    // Check entry point pattern
+static std::string osTypeFromPatterns(bool hasDispatch, bool hasAnyLibultra, const char *bootType) {
+    // __osDispatchThread (mtc0 $zero,$12) is the definitive libultra scheduler
+    if (hasDispatch) return "libultra";
+    // No dispatch + IPL3 boot but libultra fns found = likely libultra (dispatch undetected)
+    if (strcmp(bootType, "ipl3") == 0 && hasAnyLibultra) return "likely_libultra";
+    // rom_code_direct boot = custom RTOS even if some libultra fns are statically linked
+    if (strcmp(bootType, "rom_code_direct") == 0) {
+        if (hasAnyLibultra) return "custom_with_libultra_functions";
+        return "custom";
+    }
+    if (hasAnyLibultra) return "likely_libultra";
     return "unknown";
 }
 
@@ -304,6 +310,7 @@ static std::vector<uint32_t> scanRomPattern(EmulatorSession *session, uint32_t s
 std::string JsonRpcServer::handleDetectOs(int id) {
     std::string out = "{";
     uint32_t romEntry = 0;
+    const char *bootType = "unknown";
 
     // 1. ROM header
     auto headerData = mSession->readMemory(0xB0000000, 64);
@@ -348,7 +355,7 @@ std::string JsonRpcServer::handleDetectOs(int id) {
             uint32_t i1 = (uint32_t)entryMem[4]<<24|entryMem[5]<<16|entryMem[6]<<8|entryMem[7];
             uint32_t i2 = entryMem.size() >= 12 ? ((uint32_t)entryMem[8]<<24|entryMem[9]<<16|entryMem[10]<<8|entryMem[11]) : 0;
             uint32_t i3 = entryMem.size() >= 16 ? ((uint32_t)entryMem[12]<<24|entryMem[13]<<16|entryMem[14]<<8|entryMem[15]) : 0;
-            const char *bootType = "custom";
+            bootType = "custom";
             if (romEntry == 0x80000400 ||
                 (romEntry >= 0x80000000 && romEntry < 0x80001000 && (i0 >> 26) == 0x0F)) {
                 bootType = "ipl3";
@@ -388,7 +395,7 @@ std::string JsonRpcServer::handleDetectOs(int id) {
         auto [osYieldRam, osYieldRom] = scanBoth(osYieldPattern, sizeof(osYieldPattern));
         auto [customRam, customRom] = scanBoth(customPattern, sizeof(customPattern));
 
-        // Build function list (only first hit per function)
+        // Build function list — always include ALL detected patterns
         std::string funcsJson;
         auto firstOf = [&](const std::string &name, const std::vector<uint32_t> &ram, const std::vector<uint32_t> &rom) {
             uint32_t addr = ram.empty() ? (rom.empty() ? 0 : rom[0]) : ram[0];
@@ -399,24 +406,53 @@ std::string JsonRpcServer::handleDetectOs(int id) {
                      name.c_str(), addr, ram.empty() ? "rom" : "rdram");
             funcsJson += buf;
         };
-        bool hasLibultra = !osCreateRam.empty() || !osCreateRom.empty()
-                         || !osStartRam.empty() || !osStartRom.empty()
-                         || !dispatchRam.empty() || !dispatchRom.empty();
+        bool hasDispatch = !dispatchRam.empty() || !dispatchRom.empty();
+        bool hasAnyLibultra = hasDispatch
+                           || !osCreateRam.empty() || !osCreateRom.empty()
+                           || !osStartRam.empty() || !osStartRom.empty()
+                           || !osYieldRam.empty() || !osYieldRom.empty();
         firstOf("osCreateThread", osCreateRam, osCreateRom);
         firstOf("osStartThread", osStartRam, osStartRom);
         firstOf("osYieldThread", osYieldRam, osYieldRom);
         firstOf("__osDispatchThread", dispatchRam, dispatchRom);
-        if (!hasLibultra)
-            firstOf("custom_sched_fn", customRam, customRom);
+        firstOf("custom_sched_fn", customRam, customRom);
 
         char osBuf[512];
         {
-            std::string osType = osTypeFromPatterns(hasLibultra, 0);
+            std::string osType = osTypeFromPatterns(hasDispatch, hasAnyLibultra, bootType);
             snprintf(osBuf, sizeof(osBuf),
-                     ",\"os\":{\"type\":\"%s\",\"functions\":[%s]}",
-                     osType.c_str(), funcsJson.c_str());
+                     ",\"os\":{\"type\":\"%s\",\"has_dispatch\":%s,\"functions\":[%s]}",
+                     osType.c_str(), hasDispatch ? "true" : "false", funcsJson.c_str());
         }
         out += std::string(osBuf);
+
+        // 3b. Active context probe — check if current PC lands in a detected function
+        {
+            uint32_t curPc = mSession->getPC();
+            // only meaningful if running past boot (PC in code space, not PIF)
+            if (curPc >= 0x80000000 && curPc < 0x80400000) {
+                // Build a small range map from detected addresses (assume ~0x200 byte functions)
+                const std::pair<const char*, uint32_t> knownFns[] = {
+                    {"osCreateThread",     osCreateRam.empty() ? (osCreateRom.empty() ? 0 : osCreateRom[0]) : osCreateRam[0]},
+                    {"osStartThread",      osStartRam.empty() ? (osStartRom.empty() ? 0 : osStartRom[0]) : osStartRam[0]},
+                    {"osYieldThread",      osYieldRam.empty() ? (osYieldRom.empty() ? 0 : osYieldRom[0]) : osYieldRam[0]},
+                    {"__osDispatchThread", dispatchRam.empty() ? (dispatchRom.empty() ? 0 : dispatchRom[0]) : dispatchRam[0]},
+                    {"custom_sched_fn",    customRam.empty() ? (customRom.empty() ? 0 : customRom[0]) : customRam[0]},
+                };
+                const char *activeFn = "unknown";
+                for (auto &fn : knownFns) {
+                    if (fn.second != 0 && curPc >= fn.second && curPc < fn.second + 0x200) {
+                        activeFn = fn.first;
+                        break;
+                    }
+                }
+                char ctxBuf[128];
+                snprintf(ctxBuf, sizeof(ctxBuf),
+                         ",\"active_context\":{\"pc\":\"0x%08X\",\"in_function\":\"%s\"}",
+                         curPc, activeFn);
+                out += std::string(ctxBuf);
+            }
+        }
     }
 
     // 4. RSP ucode detection
