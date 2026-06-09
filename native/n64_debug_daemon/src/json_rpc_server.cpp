@@ -361,6 +361,57 @@ std::string JsonRpcServer::handleMethod(const std::string &method,
         return formatResponse(id, "{\"ok\":true}");
     }
 
+    // SP / RSP
+    if (method == "read_sp_mem") {
+        uint32_t offset = extractHex(paramsJson, "offset");
+        uint32_t size = extractInt(paramsJson, "size");
+        if (size == 0 || size > 0x2000) size = 0x2000;
+        auto data = mSession->readSpMemory(offset, size);
+        std::string json = "{\"offset\":" + hexStr(offset) +
+                           ",\"size\":" + std::to_string(size) +
+                           ",\"hex\":" + bytesToHex(data) + "}";
+        return formatResponse(id, json);
+    }
+    if (method == "read_sp_regs") {
+        auto regs = mSession->readSpRegisters();
+        if (regs.size() < 9) return formatError(id, -32000, "Cannot read SP registers");
+        char buf[1024];
+        snprintf(buf, sizeof(buf),
+                 "{\"mem_addr\":%s,\"dram_addr\":%s,\"rd_len\":%s,\"wr_len\":%s,"
+                 "\"status\":%s,\"dma_full\":%s,\"dma_busy\":%s,\"reserved\":%s,\"pc\":%s}",
+                 hexStr(regs[0]).c_str(), hexStr(regs[1]).c_str(),
+                 hexStr(regs[2]).c_str(), hexStr(regs[3]).c_str(),
+                 hexStr(regs[4]).c_str(), hexStr(regs[5]).c_str(),
+                 hexStr(regs[6]).c_str(), hexStr(regs[7]).c_str(),
+                 hexStr(regs[8]).c_str());
+        return formatResponse(id, buf);
+    }
+    if (method == "get_rsp_task") {
+        auto task = mSession->readRspTaskHeader();
+        if (task.empty())
+            return formatError(id, -32000, "Cannot read RSP task header");
+        char buf[1024];
+        snprintf(buf, sizeof(buf),
+                 "{\"type\":%s,\"flags\":%s,\"ucode_boot\":%s,\"ucode_boot_size\":%s,"
+                 "\"ucode\":%s,\"ucode_size\":%s,\"ucode_data\":%s,\"ucode_data_size\":%s,"
+                 "\"dram_stack\":%s,\"dram_stack_size\":%s,\"output_buff\":%s,\"output_buff_size\":%s,"
+                 "\"data_ptr\":%s,\"data_size\":%s,\"yield_data_ptr\":%s,\"yield_data_size\":%s}",
+                 hexStr(task[0]).c_str(), hexStr(task[1]).c_str(),
+                 hexStr(task[2]).c_str(), hexStr(task[3]).c_str(),
+                 hexStr(task[4]).c_str(), hexStr(task[5]).c_str(),
+                 hexStr(task[6]).c_str(), hexStr(task[7]).c_str(),
+                 hexStr(task[8]).c_str(), hexStr(task[9]).c_str(),
+                 hexStr(task[10]).c_str(), hexStr(task[11]).c_str(),
+                 hexStr(task[12]).c_str(), hexStr(task[13]).c_str(),
+                 hexStr(task[14]).c_str(), hexStr(task[15]).c_str());
+        return formatResponse(id, buf);
+    }
+    if (method == "trace_rsp_tasks") {
+        bool enable = extractBool(paramsJson, "enable");
+        mSession->enableRspTrace(enable);
+        return formatResponse(id, "{\"ok\":true}");
+    }
+
     return formatError(id, -32601, "Method not found: " + method);
 }
 

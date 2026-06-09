@@ -149,7 +149,7 @@ Add to your Cursor MCP config:
 }
 ```
 
-## MCP Tools (23 total)
+## MCP Tools (27 total)
 
 ### Lifecycle
 | Tool | Description |
@@ -197,6 +197,14 @@ Add to your Cursor MCP config:
 | `n64_trace_rom_reads` | Enable/disable PI DMA tracing |
 | `n64_wait_for_breakpoint` | Block until breakpoint fires |
 | `n64_export_trace` | Export trace events to JSON file |
+
+### RSP / SP
+| Tool | Description |
+|------|-------------|
+| `n64_get_rsp_task` | Read current RSP task header from SP DMEM |
+| `n64_trace_rsp_tasks` | Enable/disable RSP task submission tracing |
+| `n64_read_sp_mem` | Read bytes from SP DMEM or IMEM |
+| `n64_read_sp_regs` | Read SP control registers (status, DMA, PC) |
 
 ## Project Structure
 
@@ -247,7 +255,8 @@ D:\Mupen64MCP\
 
 ### Implemented
 - Mupen64Plus core built from source with DEBUGGER flag
-- Four plugins compiled (video-rice, audio-sdl, input-sdl, rsp-hle)
+- Four plugins compiled and loaded (video-rice, audio-sdl, input-sdl, **rsp-hle**)
+- SP memory (DMEM/IMEM) and register reads via debugger — inspect RSP task headers and status without plugin attachment
 - Native daemon: core loading, plugin lifecycle, debug API, breakpoints, memory R/W, tracing
 - Config auto-set: `EnableDebugger=1`, `R4300Emulator=0` (Pure Interpreter)
 - `onDebuggerUpdate` callback propagates pause state via semaphore

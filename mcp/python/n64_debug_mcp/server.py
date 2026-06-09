@@ -274,6 +274,50 @@ def n64_export_trace(path: str, count: int = 0) -> dict[str, Any]:
     return {"ok": True, "path": path, "events_written": len(events)}
 
 
+# ── RSP / SP ───────────────────────────────────────────────────
+
+
+@mcp.tool()
+def n64_get_rsp_task() -> dict[str, Any]:
+    """Read the current RSP task header from SP DMEM (osSpTask at 0xA4000FC0).
+
+    Returns: type, flags, ucode ptrs, data ptrs, and sizes.
+    Use this to inspect what microcode the RSP is about to execute.
+    """
+    return _client().call("get_rsp_task")
+
+
+@mcp.tool()
+def n64_trace_rsp_tasks(enable: bool) -> dict[str, Any]:
+    """Enable or disable RSP task submission tracing.
+
+    When enabled, every RSP task submission is logged as a trace event.
+    """
+    return _client().call("trace_rsp_tasks", {"enable": enable})
+
+
+@mcp.tool()
+def n64_read_sp_mem(offset: str, size: int = 64) -> dict[str, Any]:
+    """Read bytes from SP memory (DMEM or IMEM).
+
+    offset: hex offset within SP memory space (0x000-0xFFF = DMEM,
+            0x1000-0x1FFF = IMEM), e.g. "0xFC0" for task header
+    size:   number of bytes to read (max 8 KB)
+    Returns: {"offset": "...", "size": N, "hex": "..."}
+    """
+    return _client().call("read_sp_mem", {"offset": offset, "size": size})
+
+
+@mcp.tool()
+def n64_read_sp_regs() -> dict[str, Any]:
+    """Read SP control registers (MEM_ADDR, DRAM_ADDR, RD_LEN, WR_LEN,
+    STATUS, DMA_FULL, DMA_BUSY, PC).
+
+    Useful for checking RSP/DMA status and the current SP program counter.
+    """
+    return _client().call("read_sp_regs")
+
+
 # ── entry point ────────────────────────────────────────────────
 
 

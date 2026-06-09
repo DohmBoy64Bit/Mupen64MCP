@@ -197,7 +197,13 @@ bool EmulatorSession::isDebuggerAvailable() const {
 bool EmulatorSession::loadPlugins(const PluginSet &plugins) {
     auto loadOne = [&](const std::string &path, PluginLib &out) -> bool {
         if (path.empty() || path == "dummy") return true; // dummy plugin — core handles it
+        std::cerr << "Loading plugin: " << path << "\n";
         out.handle = loadLibrary(path);
+        if (!out.handle) {
+            std::cerr << "LoadLibrary failed for: " << path << "\n";
+            return false;
+        }
+        std::cerr << "  handle=" << out.handle << "\n";
         if (!out.handle) {
             std::cerr << "Failed to load plugin: " << path << "\n";
             return false;
@@ -238,7 +244,9 @@ bool EmulatorSession::openRom(const std::string &romPath) {
     // Call PluginStartup on each loaded plugin (skip dummy/no-handle)
     auto startPlugin = [&](const PluginLib &p, m64p_plugin_type type) -> bool {
         if (!p.startup) return true;
+        std::cerr << "PluginStartup type=" << type << "\n";
         m64p_error r = p.startup(mCoreHandle, type, sDebugCallback);
+        std::cerr << "  result=" << r << "\n";
         if (r != M64ERR_SUCCESS) {
             std::cerr << "PluginStartup failed for type " << type << "\n";
             return false;
@@ -260,9 +268,13 @@ bool EmulatorSession::openRom(const std::string &romPath) {
 
     // Attach plugins in required order: Video → Audio → Input → RSP
     // Pass nullptr handle for dummy plugins; core provides built-in dummy
+    // Attach RSP LAST — core requires GFX/AUDIO/INPUT to be attached first
+    // (plugin_start_rsp reads function pointers from gfx/audio structs)
     auto attach = [&](const PluginLib &p, m64p_plugin_type type) -> bool {
         m64p_dynlib_handle h = (m64p_dynlib_handle)p.handle;
+        std::cerr << "CoreAttachPlugin type=" << type << " handle=" << h << "\n";
         m64p_error r = mAPI.CoreAttachPlugin(type, h);
+        std::cerr << "  result=" << r << "\n";
         if (r != M64ERR_SUCCESS) {
             std::cerr << "CoreAttachPlugin failed for type " << type << "\n";
             return false;
@@ -274,9 +286,12 @@ bool EmulatorSession::openRom(const std::string &romPath) {
     if (!attach(mPlugins.input, M64PLUGIN_INPUT)) return false;
     if (!attach(mPlugins.rsp, M64PLUGIN_RSP)) return false;
 
+    std::cerr << "All plugins attached, setting debugger callbacks\n";
+
     // Set debugger callbacks if available
     if (isDebuggerAvailable()) {
         mAPI.DebugSetCallbacks(sDbgInit, sDbgUpdate, sDbgVi);
+        std::cerr << "Debugger callbacks set\n";
     }
 
     mRomPath = romPath;
@@ -477,6 +492,41 @@ uint32_t EmulatorSession::translateAddress(uint32_t vaddr) {
 int EmulatorSession::getDebugState(m64p_dbg_state state) {
     if (!isDebuggerAvailable() || !mAPI.DebugGetState) return -1;
     return mAPI.DebugGetState(state);
+}
+
+std::vector<uint32_t> EmulatorSession::readRspTaskHeader() {
+    // SP DMEM is at physical 0x04000000 → KSEG1 virtual 0xA4000000
+    // Task header at DMEM + 0xFC0 (standard osSpTask placement)
+    uint32_t base = 0xA4000FC0;
+    std::vector<uint32_t> words;
+    if (!isDebuggerAvailable() || !mEmuRunning) return words;
+    for (int i = 0; i < 16; i++) {
+        words.push_back(mAPI.DebugMemRead32(base + i * 4));
+    }
+    return words;
+}
+
+std::vector<uint8_t> EmulatorSession::readSpMemory(uint32_t offset, uint32_t size) {
+    // SP DMEM at 0xA4000000, SP IMEM at 0xA4001000
+    // offset 0x000-0xFFF = DMEM, offset 0x1000-0x1FFF = IMEM
+    uint32_t vaddr = 0xA4000000 + (offset & 0x1FFF);
+    if (size > 0x2000) size = 0x2000;
+    return readMemory(vaddr, size);
+}
+
+std::vector<uint32_t> EmulatorSession::readSpRegisters() {
+    // SP registers are at 0xA4040000 (physical 0x04040000 → KSEG1)
+    std::vector<uint32_t> regs;
+    if (!isDebuggerAvailable() || !mEmuRunning) return regs;
+    uint32_t base = 0xA4040000;
+    // Read first 8 SP registers: SP_MEM_ADDR, SP_DRAM_ADDR, SP_RD_LEN, SP_WR_LEN,
+    // SP_STATUS, SP_DMA_FULL, SP_DMA_BUSY, SP_PC (at offset 0x8 in regs2)
+    for (int i = 0; i < 8; i++) {
+        regs.push_back(mAPI.DebugMemRead32(base + i * 4));
+    }
+    // SP_PC is at a different offset: SP core PC register
+    regs.push_back(mAPI.DebugMemRead32(0xA4040000 + 0x8));  // SP_PC_REG
+    return regs;
 }
 
 // --- Breakpoints ---

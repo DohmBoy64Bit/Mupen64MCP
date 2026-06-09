@@ -38,6 +38,9 @@ public:
     bool writeMemory(uint32_t address, const uint8_t *data, uint32_t size);
     uint32_t translateAddress(uint32_t vaddr);
     int getDebugState(m64p_dbg_state state);
+    std::vector<uint32_t> readRspTaskHeader();
+    std::vector<uint8_t> readSpMemory(uint32_t offset, uint32_t size);
+    std::vector<uint32_t> readSpRegisters();
 
     // Breakpoints
     int addExecBreakpoint(uint32_t vaddr);
