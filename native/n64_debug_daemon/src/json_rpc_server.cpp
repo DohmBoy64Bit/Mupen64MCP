@@ -105,11 +105,18 @@ static std::string extractString(const std::string &json, const std::string &key
 }
 
 // Extract a hex/number value from JSON
+// Handles: "key":"0x...", "key": "0x...", "key":1234, "key":0xABCD
 static uint32_t extractHex(const std::string &json, const std::string &key) {
-    std::string search = "\"" + key + "\":\"";
+    std::string search = "\"" + key + "\":";
     auto pos = json.find(search);
-    if (pos != std::string::npos) {
-        pos += search.size();
+    if (pos == std::string::npos) return 0;
+    pos += search.size();
+    // skip whitespace
+    while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t')) pos++;
+    if (pos >= json.size()) return 0;
+    // quoted hex string: "0x..."
+    if (json[pos] == '"') {
+        pos++;
         char buf[20];
         int i = 0;
         while (pos < json.size() && json[pos] != '"' && i < 19) {
@@ -118,15 +125,15 @@ static uint32_t extractHex(const std::string &json, const std::string &key) {
         buf[i] = 0;
         return (uint32_t)strtoul(buf, nullptr, 16);
     }
-    // try decimal
-    search = "\"" + key + "\":";
-    pos = json.find(search);
-    if (pos != std::string::npos) {
-        pos += search.size();
-        while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t')) pos++;
-        return (uint32_t)strtoul(json.c_str() + pos, nullptr, 10);
+    // unquoted numeric (hex or decimal)
+    char buf[20];
+    int i = 0;
+    while (pos < json.size() && json[pos] != ',' && json[pos] != '}' && json[pos] != ' ' && i < 19) {
+        buf[i++] = json[pos++];
     }
-    return 0;
+    buf[i] = 0;
+    int base = (i > 2 && buf[0] == '0' && (buf[1] == 'x' || buf[1] == 'X')) ? 16 : 10;
+    return (uint32_t)strtoul(buf, nullptr, base);
 }
 
 static int extractInt(const std::string &json, const std::string &key) {
@@ -135,7 +142,15 @@ static int extractInt(const std::string &json, const std::string &key) {
     if (pos == std::string::npos) return 0;
     pos += search.size();
     while (pos < json.size() && (json[pos] == ' ' || json[pos] == '\t')) pos++;
-    return atoi(json.c_str() + pos);
+    char buf[20];
+    int i = 0;
+    while (pos < json.size() && json[pos] != ',' && json[pos] != '}' && json[pos] != ' ' && i < 19) {
+        buf[i++] = json[pos++];
+    }
+    buf[i] = 0;
+    if (i > 2 && buf[0] == '0' && (buf[1] == 'x' || buf[1] == 'X'))
+        return (int)strtoul(buf, nullptr, 16);
+    return atoi(buf);
 }
 
 static bool extractBool(const std::string &json, const std::string &key) {
@@ -170,6 +185,177 @@ static std::string extractParams(const std::string &request) {
         if (depth == 0) break;
     }
     return params;
+}
+
+// ── Helpers for asset scanning ──────────────────────────────────
+
+// Classify a 16-byte ROM sample by content type
+static const char* classifyRomSample(const uint8_t *data, size_t len) {
+    if (len < 4) return "unknown";
+    uint32_t first = (uint32_t)data[0] << 24 | (uint32_t)data[1] << 16 |
+                     (uint32_t)data[2] << 8 | (uint32_t)data[3];
+    // Check for zeros
+    bool allZero = true;
+    for (size_t i = 0; i < len; i++) { if (data[i] != 0) { allZero = false; break; } }
+    if (allZero) return "empty";
+
+    // Check header magic
+    if (first == 0x80371240) return "rom_header";
+
+    // Check for MIPS instructions (common opcodes: 0x00-0x1F SPECIAL, 0x08-0x0F J/COP, etc.)
+    uint32_t op = first >> 26;
+    if (op == 0x00 || op == 0x01 || op == 0x04 || op == 0x05 || op == 0x07 ||
+        op == 0x08 || op == 0x09 || op == 0x0A || op == 0x0B || op == 0x0C ||
+        op == 0x0D || op == 0x0E || op == 0x0F || op == 0x20 || op == 0x21 ||
+        op == 0x22 || op == 0x23 || op == 0x24 || op == 0x25 || op == 0x26 ||
+        op == 0x27 || op == 0x28 || op == 0x29 || op == 0x2A || op == 0x2B ||
+        op == 0x2C || op == 0x2D || op == 0x2E || op == 0x2F || op == 0x30 ||
+        op == 0x31 || op == 0x32 || op == 0x33 || op == 0x34 || op == 0x35 ||
+        op == 0x36 || op == 0x37 || op == 0x38 || op == 0x39 || op == 0x3A ||
+        op == 0x3B || op == 0x3C || op == 0x3D || op == 0x3E || op == 0x3F) {
+        return "code";
+    }
+
+    // Check for ADPCM audio: repeating 73Ex pattern
+    int adpcmMatch = 0;
+    for (size_t i = 0; i < len - 1; i += 2) {
+        if ((data[i] == 0x73 || data[i] == 0x6B || data[i] == 0x7B || data[i] == 0x63) &&
+            (data[i+1] >= 0xE0 && data[i+1] <= 0xFF))
+            adpcmMatch++;
+    }
+    if (adpcmMatch >= (int)(len / 8)) return "audio";
+
+    // Check for RDP display-list commands
+    if ((first & 0xFF000000) == 0xE7000000 || (first & 0xFF000000) == 0xE6000000 ||
+        (first & 0xFF000000) == 0xBA000000 || (first & 0xFF000000) == 0xBF000000 ||
+        (first & 0xFF000000) == 0xFD000000 || (first & 0xFF000000) == 0xF5000000 ||
+        (first & 0xFF000000) == 0xF3000000 || (first & 0xFF000000) == 0xF2000000 ||
+        (first & 0xFF000000) == 0xE8000000 || (first & 0xFF000000) == 0xFC000000)
+        return "display_list";
+
+    // High entropy = likely texture/asset data
+    int uniqueBytes = 0;
+    bool seen[256] = {false};
+    for (size_t i = 0; i < len; i++) { if (!seen[data[i]]) { seen[data[i]] = true; uniqueBytes++; } }
+    if (uniqueBytes > (int)(len / 2)) return "data_high_entropy";
+
+    return "data";
+}
+
+// Format a region entry as JSON
+static std::string regionJson(const char *addrLabel, uint32_t address, uint32_t size,
+                               const char *type, const uint8_t *sample, uint32_t sampleLen) {
+    std::string out = "{\"" + std::string(addrLabel) + "\":";
+    char buf[128];
+    snprintf(buf, sizeof(buf), "\"0x%08X\",\"size\":%u,\"type\":\"%s\"", address, size, type);
+    out += buf;
+    if (sample && sampleLen > 0) {
+        out += ",\"sample\":";
+        std::vector<uint8_t> sv(sample, sample + (sampleLen < 16 ? sampleLen : 16));
+        out += bytesToHex(sv);
+    }
+    out += "}";
+    return out;
+}
+
+std::string JsonRpcServer::handleScanAssets(int id) {
+    std::string out = "{";
+
+    // 1. ROM header (4KB at KSEG1 0xB0000000)
+    auto headerData = mSession->readMemory(0xB0000000, 4096);
+    if (headerData.size() >= 64) {
+        char headStr[256];
+        uint32_t magic = (uint32_t)headerData[0] << 24 | (uint32_t)headerData[1] << 16 |
+                         (uint32_t)headerData[2] << 8 | headerData[3];
+        snprintf(headStr, sizeof(headStr),
+                 "\"magic\":\"0x%08X\",\"crc1\":\"0x%08X\",\"crc2\":\"0x%08X\",\"name\":\"%.20s\",\"code\":\"%.4s\"",
+                 magic,
+                 (uint32_t)(headerData[4]<<24|headerData[5]<<16|headerData[6]<<8|headerData[7]),
+                 (uint32_t)(headerData[8]<<24|headerData[9]<<16|headerData[10]<<8|headerData[11]),
+                 (const char*)&headerData[32],
+                 (const char*)&headerData[60]);
+        out += "\"rom_header\":{" + std::string(headStr) + "},";
+    }
+
+    // 2. Scan ROM in 64KB chunks (8MB = 128 chunks)
+    out += "\"rom_regions\":[";
+    bool first = true;
+    // 8MB ROM, 64KB strides
+    for (uint32_t off = 0; off < 0x800000; off += 0x10000) {
+        uint32_t vaddr = 0xB0000000 + off;
+        auto chunk = mSession->readMemory(vaddr, 16);
+        if (chunk.size() < 16) continue;
+        const char *type = classifyRomSample(chunk.data(), 16);
+        if (strcmp(type, "empty") == 0) continue;
+        if (!first) out += ",";
+        first = false;
+        out += regionJson("vaddr", vaddr, 0x10000, type, chunk.data(), 16);
+    }
+    out += "],";
+
+    // 3. Scan RDRAM in 128KB chunks (8MB = 64 chunks)
+    out += "\"rdram_regions\":[";
+    first = true;
+    for (uint32_t off = 0; off < 0x800000; off += 0x20000) {
+        uint32_t vaddr = 0x80000000 + off;
+        auto chunk = mSession->readMemory(vaddr, 16);
+        if (chunk.size() < 16) continue;
+        const char *type = classifyRomSample(chunk.data(), 16);
+        bool allZero = true;
+        for (auto b : chunk) { if (b != 0) { allZero = false; break; } }
+        if (allZero && off > 0x100000) continue; // skip large empty regions
+        if (!first) out += ",";
+        first = false;
+        out += regionJson("vaddr", vaddr, 0x20000, type, chunk.data(), 16);
+    }
+    out += "],";
+
+    // 4. Boot flow (PIF jump target)
+    {
+        auto pifMem = mSession->readMemory(0xA4000040, 16);
+        auto resetVec = mSession->readMemory(0x80000000, 8);
+        char bootBuf[256];
+        if (resetVec.size() >= 8) {
+            uint32_t instr1 = (uint32_t)resetVec[0]<<24|resetVec[1]<<16|resetVec[2]<<8|resetVec[3];
+            uint32_t instr2 = (uint32_t)resetVec[4]<<24|resetVec[5]<<16|resetVec[6]<<8|resetVec[7];
+            uint32_t pc = 0;
+            // jr $k0: opcode 0x00, funct 0x08, rs $k0(26)
+            if ((instr1 >> 26) == 0 && (instr1 & 0x3F) == 0x08 && ((instr1 >> 21) & 0x1F) == 26) {
+                pc = instr2; // nop delay slot = target already in $k0 from lui+addiu
+            }
+            snprintf(bootBuf, sizeof(bootBuf),
+                     "\"boot_flow\":{\"pif_jump\":\"0x%08X\",\"reset_trampoline\":[\"0x%08X\",\"0x%08X\"],\"detected_target\":\"0x%08X\"}",
+                     (uint32_t)(pifMem[4]<<24|pifMem[5]<<16|pifMem[6]<<8|pifMem[7]),
+                     instr1, instr2, pc);
+            out += std::string(bootBuf) + ",";
+        }
+    }
+
+    // 5. RSP task (if paused mid-execution)
+    {
+        auto task = mSession->readRspTaskHeader();
+        if (!task.empty() && task[0] != 0) {
+            char rspBuf[512];
+            snprintf(rspBuf, sizeof(rspBuf),
+                     "\"rsp_task\":{\"type\":\"0x%08X\",\"ucode_boot\":\"0x%08X\",\"ucode\":\"0x%08X\",\"ucode_data\":\"0x%08X\",\"data_ptr\":\"0x%08X\",\"data_size\":\"0x%08X\"}",
+                     task[0], task[2], task[4], task[6], task[12], task[13]);
+            out += std::string(rspBuf) + ",";
+        }
+    }
+
+    // 6. Emulator state
+    {
+        char stateBuf[128];
+        snprintf(stateBuf, sizeof(stateBuf),
+                 "\"state\":{\"frame\":%llu,\"pc\":%s,\"paused\":%s}",
+                 (unsigned long long)mSession->frameCount(),
+                 hexStr(mSession->getPC()).c_str(),
+                 mSession->isPaused() ? "true" : "false");
+        out += std::string(stateBuf);
+    }
+
+    out += "}";
+    return formatResponse(id, out);
 }
 
 // --- JSON-RPC method implementations ---
@@ -427,6 +613,11 @@ std::string JsonRpcServer::handleMethod(const std::string &method,
         bool enable = extractBool(paramsJson, "enable");
         mSession->enableRspTrace(enable);
         return formatResponse(id, "{\"ok\":true}");
+    }
+
+    // ── Asset scanning ─────────────────────────────────────────
+    if (method == "scan_assets") {
+        return handleScanAssets(id);
     }
 
     return formatError(id, -32601, "Method not found: " + method);

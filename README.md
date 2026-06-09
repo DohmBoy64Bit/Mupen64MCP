@@ -14,7 +14,7 @@ Mupen64MCP lets AI assistants (Claude Desktop, Cursor, etc.) inspect and control
              │ stdio (MCP protocol)         │
 ┌────────────▼─────────────────────────────▼───────┐
 │           n64-debug-mcp  (Python)                 │
-│  FastMCP server · 29 tools                        │
+│  FastMCP server · 31 tools                        │
 │  Thin translation layer → JSON-RPC                │
 └────────────┬─────────────────────────────┬───────┘
              │ TCP 127.0.0.1:9876           │
@@ -149,7 +149,7 @@ Add to your Cursor MCP config:
 }
 ```
 
-## MCP Tools (29 total)
+## MCP Tools (31 total)
 
 ### Lifecycle
 | Tool | Description |
@@ -198,6 +198,12 @@ Add to your Cursor MCP config:
 | `n64_wait_for_breakpoint` | Block until breakpoint fires |
 | `n64_export_trace` | Export trace events to JSON file |
 
+### Asset Discovery
+| Tool | Description |
+|------|-------------|
+| `n64_discover_assets` | Scan ROM, RDRAM, and RSP state for structured asset manifest |
+| `n64_export_manifest` | Scan + export asset manifest to JSON file |
+
 ### PI DMA
 | Tool | Description |
 |------|-------------|
@@ -221,7 +227,7 @@ D:\Mupen64MCP\
 │       ├── pyproject.toml           # Python package config
 │       └── n64_debug_mcp/
 │           ├── __init__.py
-│           ├── server.py            # 29 MCP tools (FastMCP)
+│   ├── server.py            # 31 MCP tools (FastMCP)
 │           └── daemon_client.py     # TCP JSON-RPC client
 ├── native/
 │   └── n64_debug_daemon/
@@ -267,7 +273,7 @@ D:\Mupen64MCP\
 - Config auto-set: `EnableDebugger=1`, `R4300Emulator=0` (Pure Interpreter)
 - `onDebuggerUpdate` callback propagates pause state via semaphore
 - JSON-RPC over TCP with space-tolerant parser
-- 29 MCP tools via FastMCP
+- 31 MCP tools via FastMCP
 - Python daemon client with one-connection-per-call pattern
 - Breakpoint → resume → wait loop for runtime debugging
 - ROM-read DMA tracing (PI register capture)

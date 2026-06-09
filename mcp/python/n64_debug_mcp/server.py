@@ -343,6 +343,36 @@ def n64_read_sp_regs() -> dict[str, Any]:
     return _client().call("read_sp_regs")
 
 
+# ── asset discovery ──────────────────────────────────────────
+
+
+@mcp.tool()
+def n64_discover_assets() -> dict[str, Any]:
+    """Scan ROM, RDRAM, and RSP state to produce a structured asset manifest.
+
+    Reads the ROM header, scans all ROM and RDRAM regions (classifying
+    by content type: code, audio, display_list, texture, etc.), captures
+    the boot flow and active RSP task, and returns everything as a
+    structured JSON manifest. Use this to understand the runtime layout
+    of the loaded game.
+    """
+    return _client().call("scan_assets")
+
+
+@mcp.tool()
+def n64_export_manifest(path: str) -> dict[str, Any]:
+    """Scan assets and export the full manifest to a JSON file.
+
+    path: file path for the output JSON (e.g. "asset_manifest.json")
+    """
+    manifest = _client().call("scan_assets")
+    import json as _json
+    with open(path, "w") as f:
+        _json.dump(manifest, f, indent=2)
+    return {"ok": True, "path": path, "rom_regions": len(manifest.get("rom_regions", [])),
+            "rdram_regions": len(manifest.get("rdram_regions", []))}
+
+
 # ── entry point ────────────────────────────────────────────────
 
 

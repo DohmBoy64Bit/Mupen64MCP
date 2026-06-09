@@ -1,0 +1,11 @@
+-- The CXX compiler identification is GNU 16.1.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: C:/msys64/mingw64/bin/c++.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+CMake Error at CMakeLists.txt:11 (message):
+  libmupen64plus not found.  Set MUPEN64PLUS_DIR or -DMUPEN64PLUS_DIR=path
+
+
+-- Configuring incomplete, errors occurred!

@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"D:/Mupen64MCP/native/n64_debug_daemon/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

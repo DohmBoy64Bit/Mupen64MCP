@@ -1,0 +1,5 @@
+[ 12%] Linking CXX executable n64-debug-daemon.exe
+collect2.exe: error: ld returned 5 exit status
+make[2]: *** [CMakeFiles/n64-debug-daemon.dir/build.make:206: n64-debug-daemon.exe] Error 1
+make[1]: *** [CMakeFiles/Makefile2:87: CMakeFiles/n64-debug-daemon.dir/all] Error 2
+make: *** [Makefile:91: all] Error 2
