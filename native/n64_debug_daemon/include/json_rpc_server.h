@@ -18,6 +18,7 @@ private:
     std::string handleRequest(const std::string &requestJson);
     std::string handleMethod(const std::string &method, const std::string &paramsJson, int id);
     std::string handleScanAssets(int id);
+    std::string handleDetectOs(int id);
 
     EmulatorSession *mSession;
     int mPort;

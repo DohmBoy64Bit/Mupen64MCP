@@ -258,6 +258,192 @@ static std::string regionJson(const char *addrLabel, uint32_t address, uint32_t 
     return out;
 }
 
+// ── OS detection ─────────────────────────────────────────────
+static std::string osTypeFromPatterns(bool hasLibultra, int customCount) {
+    if (hasLibultra) return "libultra";
+    if (customCount >= 2) return "custom";
+    if (customCount > 0) return "likely_custom";
+    // Check entry point pattern
+    return "unknown";
+}
+
+static const char* classifyUcode(const uint8_t *data, size_t len) {
+    if (len < 16) return "unknown";
+    int op0 = data[0] >> 2;
+    int cop2Count = 0, lwc2Count = 0, swc2Count = 0, total = (int)(len / 4);
+    for (size_t i = 0; i + 4 <= len; i += 4) {
+        uint32_t instr = (uint32_t)data[i] << 24 | data[i+1] << 16 | data[i+2] << 8 | data[i+3];
+        uint32_t op = instr >> 26;
+        if (op == 0x12) cop2Count++;        // COP2
+        else if (op == 0x32) lwc2Count++;   // LWC2
+        else if (op == 0x3A) swc2Count++;   // SWC2
+    }
+    if (cop2Count + lwc2Count + swc2Count == 0) return "standard_f3d";
+    int special = cop2Count + lwc2Count + swc2Count;
+    if (special < total / 4) return "f3dex2_like";
+    return "custom_f3d_variant";
+}
+
+// Scan ROM region for a specific byte pattern (reads 4KB chunks for speed)
+static std::vector<uint32_t> scanRomPattern(EmulatorSession *session, uint32_t startVaddr,
+                                             uint32_t size, const uint8_t *pattern, size_t patLen) {
+    std::vector<uint32_t> results;
+    const uint32_t STEP = 4096;
+    for (uint32_t baseOff = 0; baseOff + patLen <= size; baseOff += STEP) {
+        uint32_t readSize = (uint32_t)std::min((size_t)(STEP + patLen - 1), (size_t)(size - baseOff));
+        auto chunk = session->readMemory(startVaddr + baseOff, readSize);
+        if (chunk.size() < patLen) break;
+        for (uint32_t off = 0; off + patLen <= chunk.size(); off += 4) {
+            if (memcmp(&chunk[off], pattern, patLen) == 0)
+                results.push_back(startVaddr + baseOff + off);
+        }
+    }
+    return results;
+}
+
+std::string JsonRpcServer::handleDetectOs(int id) {
+    std::string out = "{";
+    uint32_t romEntry = 0;
+
+    // 1. ROM header
+    auto headerData = mSession->readMemory(0xB0000000, 64);
+    if (headerData.size() >= 64) {
+        uint32_t magic = (uint32_t)headerData[0] << 24 | headerData[1] << 16 | headerData[2] << 8 | headerData[3];
+        uint32_t clockrate = (uint32_t)headerData[4] << 24 | headerData[5] << 16 | headerData[6] << 8 | headerData[7];
+        romEntry = (uint32_t)headerData[8] << 24 | headerData[9] << 16 | headerData[10] << 8 | headerData[11];
+        uint32_t crc1 = (uint32_t)headerData[16] << 24 | headerData[17] << 16 | headerData[18] << 8 | headerData[19];
+        uint32_t crc2 = (uint32_t)headerData[20] << 24 | headerData[21] << 16 | headerData[22] << 8 | headerData[23];
+        uint8_t country = headerData[63];
+        const char *countryStr = "unknown";
+        if (country == 0x44) countryStr = "Germany";
+        else if (country == 0x45) countryStr = "USA";
+        else if (country == 0x46) countryStr = "France";
+        else if (country == 0x49) countryStr = "Italy";
+        else if (country == 0x4A) countryStr = "Japan";
+        else if (country == 0x50) countryStr = "Europe";
+        else if (country == 0x55) countryStr = "Australia";
+        else if (country == 0x59) countryStr = "PAL";
+
+        // Sanitize ROM code field (strip non-printable chars)
+        char codeStr[8] = {0};
+        for (int i = 0; i < 4 && i + 60 < 64 && headerData[60 + i] >= 0x20 && headerData[60 + i] < 0x7F; i++)
+            codeStr[i] = headerData[60 + i];
+        if (codeStr[0] == 0) snprintf(codeStr, sizeof(codeStr), "none");
+
+        char headBuf[512];
+        snprintf(headBuf, sizeof(headBuf),
+                 "\"rom\":{\"name\":\"%.20s\",\"code\":\"%s\",\"crc1\":\"0x%08X\",\"crc2\":\"0x%08X\","
+                 "\"entry\":\"0x%08X\",\"clockrate\":\"0x%08X\",\"country\":\"%s\",\"size_bytes\":%u}",
+                 (const char*)&headerData[32], codeStr,
+                 crc1, crc2, romEntry, clockrate, countryStr, mSession->isRomLoaded() ? 0x800000 : 0);
+        out += std::string(headBuf);
+    }
+
+    // 2. Boot flow analysis — read from ROM via KSEG1
+    if (romEntry != 0) {
+        uint32_t romKseg1 = 0xB0000000 + (romEntry & 0x1FFFFFFF);
+        auto entryMem = mSession->readMemory(romKseg1, 32);
+        if (entryMem.size() >= 16) {
+            uint32_t i0 = (uint32_t)entryMem[0]<<24|entryMem[1]<<16|entryMem[2]<<8|entryMem[3];
+            uint32_t i1 = (uint32_t)entryMem[4]<<24|entryMem[5]<<16|entryMem[6]<<8|entryMem[7];
+            uint32_t i2 = entryMem.size() >= 12 ? ((uint32_t)entryMem[8]<<24|entryMem[9]<<16|entryMem[10]<<8|entryMem[11]) : 0;
+            uint32_t i3 = entryMem.size() >= 16 ? ((uint32_t)entryMem[12]<<24|entryMem[13]<<16|entryMem[14]<<8|entryMem[15]) : 0;
+            const char *bootType = "custom";
+            if (romEntry == 0x80000400 ||
+                (romEntry >= 0x80000000 && romEntry < 0x80001000 && (i0 >> 26) == 0x0F)) {
+                bootType = "ipl3";
+            } else if (romEntry >= 0x80000000 && romEntry < 0x80200000) {
+                bootType = "rom_code_direct";
+            }
+            char bootBuf[256];
+            snprintf(bootBuf, sizeof(bootBuf),
+                     ",\"boot\":{\"type\":\"%s\",\"entry\":\"0x%08X\",\"first_instrs\":[\"0x%08X\",\"0x%08X\",\"0x%08X\",\"0x%08X\"]}",
+                     bootType, romEntry, i0, i1, i2, i3);
+            out += std::string(bootBuf);
+        }
+    }
+
+    // 3. OS type detection by scanning RDRAM (where code executes) and ROM
+    {
+        // libultra thread function prologues (big-endian z64)
+        uint8_t osCreatePattern[] = {0x27,0xBD,0xFF,0xD0, 0xAF,0xBF,0x00,0x2C, 0xAF,0xB0,0x00,0x28};
+        uint8_t osStartPattern[] = {0x27,0xBD,0xFF,0xD8, 0xAF,0xBF,0x00,0x24};
+        uint8_t dispatchPattern[] = {0x40,0x80,0x60,0x00}; // mtc0 $zero,$12 (SR)
+        uint8_t osYieldPattern[] = {0x27,0xBD,0xFF,0xE0, 0xAF,0xBF,0x00,0x1C};
+        uint8_t customPattern[] = {0x27,0xBD,0xFF,0xE0, 0xAF,0xBF,0x00,0x1C, 0xAF,0xB0,0x00,0x18};
+
+        // Scan RDRAM first (where code actually runs)
+        auto scanBoth = [&](const uint8_t *pat, size_t patLen)
+            -> std::pair<std::vector<uint32_t>, std::vector<uint32_t>> {
+            auto ram = scanRomPattern(mSession, 0x80001000, 0x400000, pat, patLen);
+            auto rom = scanRomPattern(mSession, 0xB0001000, 0x400000, pat, patLen);
+            // If RDRAM has the pattern, prefer it (it's the execution address)
+            if (!ram.empty()) return {ram, {}};
+            return {{}, rom};
+        };
+
+        auto [osCreateRam, osCreateRom] = scanBoth(osCreatePattern, sizeof(osCreatePattern));
+        auto [osStartRam, osStartRom] = scanBoth(osStartPattern, sizeof(osStartPattern));
+        auto [dispatchRam, dispatchRom] = scanBoth(dispatchPattern, sizeof(dispatchPattern));
+        auto [osYieldRam, osYieldRom] = scanBoth(osYieldPattern, sizeof(osYieldPattern));
+        auto [customRam, customRom] = scanBoth(customPattern, sizeof(customPattern));
+
+        // Build function list (only first hit per function)
+        std::string funcsJson;
+        auto firstOf = [&](const std::string &name, const std::vector<uint32_t> &ram, const std::vector<uint32_t> &rom) {
+            uint32_t addr = ram.empty() ? (rom.empty() ? 0 : rom[0]) : ram[0];
+            if (addr == 0) return;
+            if (!funcsJson.empty()) funcsJson += ",";
+            char buf[64];
+            snprintf(buf, sizeof(buf), "{\"name\":\"%s\",\"addr\":\"0x%08X\",\"source\":\"%s\"}",
+                     name.c_str(), addr, ram.empty() ? "rom" : "rdram");
+            funcsJson += buf;
+        };
+        bool hasLibultra = !osCreateRam.empty() || !osCreateRom.empty()
+                         || !osStartRam.empty() || !osStartRom.empty()
+                         || !dispatchRam.empty() || !dispatchRom.empty();
+        firstOf("osCreateThread", osCreateRam, osCreateRom);
+        firstOf("osStartThread", osStartRam, osStartRom);
+        firstOf("osYieldThread", osYieldRam, osYieldRom);
+        firstOf("__osDispatchThread", dispatchRam, dispatchRom);
+        if (!hasLibultra)
+            firstOf("custom_sched_fn", customRam, customRom);
+
+        char osBuf[512];
+        {
+            std::string osType = osTypeFromPatterns(hasLibultra, 0);
+            snprintf(osBuf, sizeof(osBuf),
+                     ",\"os\":{\"type\":\"%s\",\"functions\":[%s]}",
+                     osType.c_str(), funcsJson.c_str());
+        }
+        out += std::string(osBuf);
+    }
+
+    // 4. RSP ucode detection
+    {
+        auto ucode = mSession->readMemory(0xB0031000, 256);
+        if (ucode.size() >= 64) {
+            const char *ucodeType = classifyUcode(ucode.data(), ucode.size());
+            // Check first 8 bytes as ucode_boot signature
+            uint32_t boot0 = (uint32_t)ucode[0]<<24|ucode[1]<<16|ucode[2]<<8|ucode[3];
+            uint32_t boot1 = (uint32_t)ucode[4]<<24|ucode[5]<<16|ucode[6]<<8|ucode[7];
+            // Also check for SP DMEM resident ucode (F3DEX2 has 0xB807/0x0000 signature)
+            auto dmem = mSession->readSpMemory(0, 16);
+
+            char ucodeBuf[512];
+            std::string dmemHex = bytesToHex(dmem, 16);
+            snprintf(ucodeBuf, sizeof(ucodeBuf),
+                     ",\"rsp\":{\"rom_offset\":\"0x31000\",\"type\":\"%s\",\"boot_bytes\":[\"0x%08X\",\"0x%08X\"],"
+                     "\"dmem\":%s}",
+                     ucodeType, boot0, boot1, dmemHex.c_str());
+            out += std::string(ucodeBuf);
+        }
+    }
+
+    out += "}";
+    return formatResponse(id, out);
+}
+
 std::string JsonRpcServer::handleScanAssets(int id) {
     std::string out = "{";
 
@@ -649,7 +835,9 @@ std::string JsonRpcServer::handleMethod(const std::string &method,
 
     // ── Scheduler tracing ──────────────────────────────────────
     if (method == "trace_scheduler") {
-        int result = mSession->enableSchedulerTrace();
+        uint32_t ctxAddr = extractHex(paramsJson, "ctx_switch_addr");
+        uint32_t qAddr = extractHex(paramsJson, "queue_addr");
+        int result = mSession->enableSchedulerTrace(ctxAddr, qAddr);
         if (result < 0)
             return formatError(id, -32000, "Cannot enable scheduler trace");
         return formatResponse(id, "{\"ok\":true}");
@@ -680,6 +868,11 @@ std::string JsonRpcServer::handleMethod(const std::string &method,
     // ── Asset scanning ─────────────────────────────────────────
     if (method == "scan_assets") {
         return handleScanAssets(id);
+    }
+
+    // ── OS detection ─────────────────────────────────────────
+    if (method == "detect_os") {
+        return handleDetectOs(id);
     }
 
     return formatError(id, -32601, "Method not found: " + method);

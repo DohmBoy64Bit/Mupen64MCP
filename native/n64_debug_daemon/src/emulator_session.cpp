@@ -728,23 +728,48 @@ void EmulatorSession::disableCallchainTrace() {
     for (auto idx : mCallchainBpIndices) {
         removeBreakpoint(idx);
     }
+    // Clean up any remaining BPs at tracked addresses (BP re-catch may have
+    // produced new indices after remove-and-re-add)
+    if (mAPI.DebugBreakpointCommand) {
+        for (auto addr : mCallchainAddrs) {
+            int idx = mAPI.DebugBreakpointLookup(addr, 4, M64P_BKP_FLAG_EXEC | M64P_BKP_FLAG_ENABLED);
+            if (idx >= 0)
+                mAPI.DebugBreakpointCommand(M64P_BKP_CMD_REMOVE_IDX, idx, nullptr);
+        }
+    }
     mCallchainEnabled = false;
     mCallchainAddrs.clear();
     mCallchainBpIndices.clear();
 }
 
 // --- Scheduler tracing ---
-int EmulatorSession::enableSchedulerTrace() {
+int EmulatorSession::enableSchedulerTrace(uint32_t ctxSwitchAddr, uint32_t queueAddr) {
     if (!isDebuggerAvailable()) return -1;
     if (mSchedTraceEnabled) disableSchedulerTrace();
+    // Clean up any stale BPs at these addresses
+    if (mAPI.DebugBreakpointCommand) {
+        if (ctxSwitchAddr != 0) {
+            int idx = mAPI.DebugBreakpointLookup(ctxSwitchAddr, 4, M64P_BKP_FLAG_EXEC | M64P_BKP_FLAG_ENABLED);
+            if (idx >= 0)
+                mAPI.DebugBreakpointCommand(M64P_BKP_CMD_REMOVE_IDX, idx, nullptr);
+        }
+        if (queueAddr != 0) {
+            int idx = mAPI.DebugBreakpointLookup(queueAddr, 16, M64P_BKP_FLAG_WRITE);
+            if (idx >= 0)
+                mAPI.DebugBreakpointCommand(M64P_BKP_CMD_REMOVE_IDX, idx, nullptr);
+        }
+    }
+    mSchedCtxSwitchAddr = ctxSwitchAddr;
+    mSchedQueueAddr = queueAddr;
     clearEvents();
     // BP on context switch function
-    mSchedCtxSwitchBpIdx = addExecBreakpoint(0x80125378);
+    if (ctxSwitchAddr != 0)
+        mSchedCtxSwitchBpIdx = addExecBreakpoint(ctxSwitchAddr);
     // BP on run queue head (memory write)
-    {
+    if (queueAddr != 0) {
         m64p_breakpoint bp;
-        bp.address = 0x8013AEA8;
-        bp.endaddr = 0x8013AEA8 + 15;
+        bp.address = queueAddr;
+        bp.endaddr = queueAddr + 15;
         bp.flags = M64P_BKP_FLAG_WRITE;
         int idx = mAPI.DebugBreakpointCommand(M64P_BKP_CMD_ADD_STRUCT, 0, &bp);
         if (idx >= 0) mSchedQueueBpIdx = idx;
@@ -913,7 +938,7 @@ void EmulatorSession::onDebuggerUpdate(unsigned int pc) {
     if (mSchedTraceEnabled && nowPaused) {
         bool schedHit = false;
         // Context switch BP
-        if (pc == 0x80125378) {
+        if (mSchedCtxSwitchAddr != 0 && pc == mSchedCtxSwitchAddr) {
             uint32_t ra = 0, a0 = 0, a1 = 0;
             if (isDebuggerAvailable()) {
                 a0 = readRegister(4);
@@ -940,8 +965,8 @@ void EmulatorSession::onDebuggerUpdate(unsigned int pc) {
             schedHit = true;
         }
         // Queue write BP
-        if (mSchedQueueBpIdx >= 0) {
-            auto current = readMemory(0x8013AEA8, 16);
+        if (mSchedQueueBpIdx >= 0 && mSchedQueueAddr != 0) {
+            auto current = readMemory(mSchedQueueAddr, 16);
             if (current.size() == 16 && !mSchedPrevQueueData.empty()) {
                 bool changed = false;
                 for (int i = 0; i < 16; i++) {

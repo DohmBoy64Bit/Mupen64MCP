@@ -65,7 +65,7 @@ public:
     // Callchain tracing
     int enableCallchainTrace(const std::vector<uint32_t> &addresses);
     void disableCallchainTrace();
-    int enableSchedulerTrace();
+    int enableSchedulerTrace(uint32_t ctxSwitchAddr, uint32_t queueAddr);
     void disableSchedulerTrace();
 
     // PI DMA
@@ -155,6 +155,8 @@ private:
 
     // Scheduler tracing
     bool mSchedTraceEnabled = false;
+    uint32_t mSchedCtxSwitchAddr = 0;
+    uint32_t mSchedQueueAddr = 0;
     int mSchedQueueBpIdx = -1;
     int mSchedCtxSwitchBpIdx = -1;
     std::vector<uint8_t> mSchedPrevQueueData;

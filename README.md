@@ -200,7 +200,8 @@ Add to your Cursor MCP config:
 | `n64_track_struct` | Memory write watcher — captures addr/offset/old/new on writes |
 | `n64_dl_decode` | Display list decoder — pretty-prints F3DEX2 commands |
 | `n64_trace_callchain` | Multi-BP function call tracer — captures RA/A0-A3 on call |
-| `n64_trace_scheduler` | Custom RTOS scheduler tracer — context switch + run queue |
+| `n64_trace_scheduler` | RTOS scheduler tracer — context switch + run queue (takes addresses) |
+| `n64_detect_os` | Detect OS type (libultra/custom), boot flow, RSP ucode, thread function addresses |
 
 ### Asset Discovery
 | Tool | Description |
@@ -231,7 +232,7 @@ D:\Mupen64MCP\
 │       ├── pyproject.toml           # Python package config
 │       └── n64_debug_mcp/
 │           ├── __init__.py
-│   ├── server.py            # 35 MCP tools (FastMCP)
+│   ├── server.py            # 36 MCP tools (FastMCP)
 │           └── daemon_client.py     # TCP JSON-RPC client
 ├── native/
 │   └── n64_debug_daemon/
@@ -277,7 +278,7 @@ D:\Mupen64MCP\
 - Config auto-set: `EnableDebugger=1`, `R4300Emulator=0` (Pure Interpreter)
 - `onDebuggerUpdate` callback propagates pause state via semaphore
 - JSON-RPC over TCP with space-tolerant parser
-- 35 MCP tools via FastMCP
+- 36 MCP tools via FastMCP
 - Python daemon client with one-connection-per-call pattern
 - Breakpoint → resume → wait loop for runtime debugging
 - ROM-read DMA tracing (PI register capture)

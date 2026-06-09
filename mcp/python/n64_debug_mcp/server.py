@@ -488,24 +488,52 @@ def n64_trace_callchain(addresses: str, enable: bool = True) -> dict[str, Any]:
     return _client().call("trace_callchain", {"addresses": addresses})
 
 
+# ── OS detection ────────────────────────────────────────────
+
+
+@mcp.tool()
+def n64_detect_os() -> dict[str, Any]:
+    """Detect the OS type, boot flow, RSP microcode, and thread function
+    addresses for the currently loaded ROM.
+
+    Returns:
+      rom:        header info (name, CRC, entry, country, clockrate)
+      boot:       boot type (ipl3/rom_code_direct/custom) + first instructions
+      os:         OS type (libultra/custom) + detected function addresses
+      rsp:        microcode type + boot bytes + DMEM state
+
+    Use the reported function addresses with n64_trace_scheduler and
+    n64_trace_callchain.
+    """
+    return _client().call("detect_os")
+
+
 # ── scheduler tracing ───────────────────────────────────────
 
 
 @mcp.tool()
-def n64_trace_scheduler(enable: bool = True) -> dict[str, Any]:
-    """Trace the game's custom RTOS scheduler by monitoring the run queue
-    (0x8013AEA8) and context-switch function (0x80125378).
+def n64_trace_scheduler(ctx_switch_addr: str, queue_addr: str = "",
+                        enable: bool = True) -> dict[str, Any]:
+    """Trace the game's RTOS scheduler by monitoring the run queue
+    and context-switch function.
 
     Captures:
-      - sched_ctx_switch: thread switch with RA, A0 (old TCB), A1 (new TCB)
+      - sched_ctx_switch: thread switch RA, A0 (old TCB), A1 (new TCB)
       - sched_queue_write: queue head pointer changes
 
     Auto-resumes after each capture. Read events via n64_get_trace_events.
-    Supports both standard libultra and custom-run-time games.
+    Use n64_detect_os to find the right addresses for your game.
+
+    ctx_switch_addr: hex address of context-switch function (or 0 to skip)
+    queue_addr:      hex address of run queue head (or "" to skip)
+    enable:          true to start, false to stop
     """
     if not enable:
         return _client().call("trace_scheduler_stop")
-    return _client().call("trace_scheduler")
+    params = {"ctx_switch_addr": ctx_switch_addr}
+    if queue_addr:
+        params["queue_addr"] = queue_addr
+    return _client().call("trace_scheduler", params)
 
 
 # ── struct tracking ──────────────────────────────────────────
