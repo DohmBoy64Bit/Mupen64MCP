@@ -681,6 +681,92 @@ std::string EmulatorSession::getCurrentStateLabel() const {
     return mCurrentStateLabel;
 }
 
+// --- Struct tracking ---
+int EmulatorSession::enableStructTracking(uint32_t addr, uint32_t size) {
+    if (!isDebuggerAvailable()) return -1;
+    if (mStructTrackEnabled) disableStructTracking();
+    mStructTrackAddr = addr;
+    mStructTrackSize = size;
+    mStructTrackPrevData = readMemory(addr, size);
+    mStructTrackBpIndex = addMemoryBreakpoint(addr, size, M64P_BKP_FLAG_WRITE);
+    if (mStructTrackBpIndex >= 0) {
+        mStructTrackEnabled = true;
+    }
+    return mStructTrackBpIndex;
+}
+
+void EmulatorSession::disableStructTracking() {
+    if (!mStructTrackEnabled) return;
+    if (mStructTrackBpIndex >= 0) {
+        removeBreakpoint(mStructTrackBpIndex);
+    }
+    mStructTrackEnabled = false;
+    mStructTrackAddr = 0;
+    mStructTrackSize = 0;
+    mStructTrackPrevData.clear();
+    mStructTrackBpIndex = -1;
+}
+
+// --- Callchain tracing ---
+int EmulatorSession::enableCallchainTrace(const std::vector<uint32_t> &addresses) {
+    if (!isDebuggerAvailable()) return -1;
+    if (mCallchainEnabled) disableCallchainTrace();
+    mCallchainAddrs = addresses;
+    for (auto addr : addresses) {
+        int idx = addExecBreakpoint(addr);
+        if (idx >= 0) {
+            mCallchainBpIndices.push_back(idx);
+        }
+    }
+    mCallchainEnabled = true;
+    clearEvents();
+    return (int)mCallchainBpIndices.size();
+}
+
+void EmulatorSession::disableCallchainTrace() {
+    if (!mCallchainEnabled) return;
+    for (auto idx : mCallchainBpIndices) {
+        removeBreakpoint(idx);
+    }
+    mCallchainEnabled = false;
+    mCallchainAddrs.clear();
+    mCallchainBpIndices.clear();
+}
+
+// --- Scheduler tracing ---
+int EmulatorSession::enableSchedulerTrace() {
+    if (!isDebuggerAvailable()) return -1;
+    if (mSchedTraceEnabled) disableSchedulerTrace();
+    clearEvents();
+    // BP on context switch function
+    mSchedCtxSwitchBpIdx = addExecBreakpoint(0x80125378);
+    // BP on run queue head (memory write)
+    {
+        m64p_breakpoint bp;
+        bp.address = 0x8013AEA8;
+        bp.endaddr = 0x8013AEA8 + 15;
+        bp.flags = M64P_BKP_FLAG_WRITE;
+        int idx = mAPI.DebugBreakpointCommand(M64P_BKP_CMD_ADD_STRUCT, 0, &bp);
+        if (idx >= 0) mSchedQueueBpIdx = idx;
+    }
+    mSchedTraceEnabled = true;
+    return (mSchedCtxSwitchBpIdx >= 0 || mSchedQueueBpIdx >= 0) ? 1 : -1;
+}
+
+void EmulatorSession::disableSchedulerTrace() {
+    if (!mSchedTraceEnabled) return;
+    if (mSchedCtxSwitchBpIdx >= 0) {
+        removeBreakpoint(mSchedCtxSwitchBpIdx);
+        mSchedCtxSwitchBpIdx = -1;
+    }
+    if (mSchedQueueBpIdx >= 0) {
+        removeBreakpoint(mSchedQueueBpIdx);
+        mSchedQueueBpIdx = -1;
+    }
+    mSchedTraceEnabled = false;
+    mSchedPrevQueueData.clear();
+}
+
 // --- Callbacks (called from emulator thread) ---
 void EmulatorSession::onCoreLog(int level, const char *msg) {
     // Store last N log messages for debugging
@@ -724,11 +810,171 @@ void EmulatorSession::onDebuggerUpdate(unsigned int pc) {
             bp.endaddr = mSteppingBpAddr;
             bp.flags = mSteppingBpFlags;
             mAPI.DebugBreakpointCommand(M64P_BKP_CMD_ADD_STRUCT, 0, &bp);
+            // If callchain tracing is active, auto-resume after re-adding BP
+            if (mCallchainEnabled) {
+                // We stepped past the BP; now resume running
+                mSteppingBpAddr = 0;
+                mSteppingBpFlags = 0;
+                mAPI.DebugSetRunState(M64P_DBG_RUNSTATE_RUNNING);
+                mAPI.DebugStep();
+                mEmuPaused = false;
+                return;
+            }
             mSteppingBpAddr = 0;
             mSteppingBpFlags = 0;
         }
         mEmuPaused = true;
         nowPaused = true;
+    }
+
+    // Callchain tracing: capture on BP hit at tracked addresses, then auto-resume
+    if (mCallchainEnabled && nowPaused) {
+        bool hit = false;
+        for (auto addr : mCallchainAddrs) {
+            if (pc == addr) { hit = true; break; }
+        }
+        if (hit) {
+            uint32_t ra = 0, a0 = 0, a1 = 0, a2 = 0, a3 = 0;
+            if (isDebuggerAvailable()) {
+                a0 = readRegister(4);
+                a1 = readRegister(5);
+                a2 = readRegister(6);
+                a3 = readRegister(7);
+                ra = readRegister(31);
+            }
+            {
+                std::lock_guard<std::mutex> lock(mEventMutex);
+                TraceEvent ev;
+                ev.frame = mFrameCounter;
+                ev.type = "callchain";
+                ev.pc = pc;
+                ev.stateLabel = mCurrentStateLabel;
+                char buf[256];
+                snprintf(buf, sizeof(buf),
+                         "{\"ra\":\"0x%X\",\"a0\":\"0x%X\",\"a1\":\"0x%X\",\"a2\":\"0x%X\",\"a3\":\"0x%X\"}",
+                         ra, a0, a1, a2, a3);
+                ev.data.push_back({"callchain", buf});
+                mEvents.push_back(ev);
+                if (mEvents.size() > 100000) {
+                    mEvents.erase(mEvents.begin(), mEvents.begin() + 50000);
+                }
+            }
+            // Remove this BP to avoid re-catch, step past it, then re-add
+            m64p_breakpoint bp;
+            bp.address = pc;
+            bp.endaddr = pc;
+            bp.flags = M64P_BKP_FLAG_EXEC | M64P_BKP_FLAG_ENABLED;
+            int bpIdx = mAPI.DebugBreakpointLookup(pc, 4, M64P_BKP_FLAG_EXEC | M64P_BKP_FLAG_ENABLED);
+            if (bpIdx >= 0) {
+                mAPI.DebugBreakpointCommand(M64P_BKP_CMD_REMOVE_IDX, bpIdx, nullptr);
+            }
+            mSteppingBpAddr = pc;
+            mSteppingBpFlags = M64P_BKP_FLAG_EXEC | M64P_BKP_FLAG_ENABLED;
+            mAPI.DebugSetRunState(M64P_DBG_RUNSTATE_STEPPING);
+            mAPI.DebugStep();
+            mEmuPaused = false;
+            return;
+        }
+    }
+
+    // Struct tracking: capture write data, then auto-resume
+    if (mStructTrackEnabled && nowPaused && mStructTrackSize > 0) {
+        auto current = readMemory(mStructTrackAddr, mStructTrackSize);
+        if (current.size() == mStructTrackPrevData.size()) {
+            for (uint32_t off = 0; off < current.size(); off++) {
+                if (current[off] != mStructTrackPrevData[off]) {
+                    std::lock_guard<std::mutex> lock(mEventMutex);
+                    TraceEvent ev;
+                    ev.frame = mFrameCounter;
+                    ev.type = "struct_write";
+                    ev.pc = pc;
+                    ev.stateLabel = mCurrentStateLabel;
+                    char buf[128];
+                    snprintf(buf, sizeof(buf),
+                             "{\"addr\":\"0x%X\",\"offset\":%u,\"val\":\"0x%02X\",\"prev\":\"0x%02X\"}",
+                             mStructTrackAddr + off, off, current[off], mStructTrackPrevData[off]);
+                    ev.data.push_back({"struct_write", buf});
+                    mEvents.push_back(ev);
+                    if (mEvents.size() > 100000) {
+                        mEvents.erase(mEvents.begin(), mEvents.begin() + 50000);
+                    }
+                }
+            }
+            mStructTrackPrevData = std::move(current);
+        }
+        // Auto-resume to capture next write transparently
+        mAPI.DebugSetRunState(M64P_DBG_RUNSTATE_RUNNING);
+        mAPI.DebugStep();
+        mEmuPaused = false;
+        return;
+    }
+
+    // Scheduler tracing: context switch or queue write hit
+    if (mSchedTraceEnabled && nowPaused) {
+        bool schedHit = false;
+        // Context switch BP
+        if (pc == 0x80125378) {
+            uint32_t ra = 0, a0 = 0, a1 = 0;
+            if (isDebuggerAvailable()) {
+                a0 = readRegister(4);
+                a1 = readRegister(5);
+                ra = readRegister(31);
+            }
+            {
+                std::lock_guard<std::mutex> lock(mEventMutex);
+                TraceEvent ev;
+                ev.frame = mFrameCounter;
+                ev.type = "sched_ctx_switch";
+                ev.pc = pc;
+                ev.stateLabel = mCurrentStateLabel;
+                char buf[128];
+                snprintf(buf, sizeof(buf),
+                         "{\"ra\":\"0x%X\",\"a0\":\"0x%X\",\"a1\":\"0x%X\"}",
+                         ra, a0, a1);
+                ev.data.push_back({"sched_ctx_switch", buf});
+                mEvents.push_back(ev);
+                if (mEvents.size() > 100000) {
+                    mEvents.erase(mEvents.begin(), mEvents.begin() + 50000);
+                }
+            }
+            schedHit = true;
+        }
+        // Queue write BP
+        if (mSchedQueueBpIdx >= 0) {
+            auto current = readMemory(0x8013AEA8, 16);
+            if (current.size() == 16 && !mSchedPrevQueueData.empty()) {
+                bool changed = false;
+                for (int i = 0; i < 16; i++) {
+                    if (current[i] != mSchedPrevQueueData[i]) { changed = true; break; }
+                }
+                if (changed) {
+                    std::lock_guard<std::mutex> lock(mEventMutex);
+                    TraceEvent ev;
+                    ev.frame = mFrameCounter;
+                    ev.type = "sched_queue_write";
+                    ev.pc = pc;
+                    ev.stateLabel = mCurrentStateLabel;
+                    char buf[128];
+                    snprintf(buf, sizeof(buf),
+                             "{\"queue_head\":\"0x%02X%02X%02X%02X\"}",
+                             current[3], current[2], current[1], current[0]);
+                    ev.data.push_back({"sched_queue_write", buf});
+                    mEvents.push_back(ev);
+                    if (mEvents.size() > 100000) {
+                        mEvents.erase(mEvents.begin(), mEvents.begin() + 50000);
+                    }
+                }
+            }
+            mSchedPrevQueueData = current;
+            schedHit = true;
+        }
+        if (schedHit) {
+            // Auto-resume — same pattern as struct tracking
+            mAPI.DebugSetRunState(M64P_DBG_RUNSTATE_RUNNING);
+            mAPI.DebugStep();
+            mEmuPaused = false;
+            return;
+        }
     }
 
     std::lock_guard<std::mutex> lock(mEventMutex);

@@ -536,7 +536,17 @@ std::string JsonRpcServer::handleMethod(const std::string &method,
             out += "{\"frame\":" + std::to_string(events[i].frame) +
                    ",\"type\":\"" + jsonEscape(events[i].type) +
                    "\",\"pc\":" + hexStr(events[i].pc) +
-                   ",\"state_label\":\"" + jsonEscape(events[i].stateLabel) + "\"}";
+                   ",\"state_label\":\"" + jsonEscape(events[i].stateLabel) + "\"";
+            if (!events[i].data.empty()) {
+                out += ",\"data\":[";
+                for (size_t d = 0; d < events[i].data.size(); d++) {
+                    if (d > 0) out += ",";
+                    out += "{\"key\":\"" + jsonEscape(events[i].data[d].first) +
+                           "\",\"value\":\"" + jsonEscape(events[i].data[d].second) + "\"}";
+                }
+                out += "]";
+            }
+            out += "}";
         }
         out += "]";
         return formatResponse(id, out);
@@ -612,6 +622,58 @@ std::string JsonRpcServer::handleMethod(const std::string &method,
     if (method == "trace_rsp_tasks") {
         bool enable = extractBool(paramsJson, "enable");
         mSession->enableRspTrace(enable);
+        return formatResponse(id, "{\"ok\":true}");
+    }
+
+    // ── Callchain tracing ───────────────────────────────────────
+    if (method == "trace_callchain") {
+        // Addresses as comma-separated hex, e.g. "0x8011C450,0x80124C60"
+        std::string addrsStr = extractString(paramsJson, "addresses");
+        std::vector<uint32_t> addrs;
+        if (!addrsStr.empty()) {
+            size_t p = 0;
+            while ((p = addrsStr.find("0x", p)) != std::string::npos) {
+                addrs.push_back((uint32_t)strtoul(addrsStr.c_str() + p, nullptr, 16));
+                p += 2;
+            }
+        }
+        int count = mSession->enableCallchainTrace(addrs);
+        if (count < 0)
+            return formatError(id, -32000, "Cannot enable callchain trace");
+        return formatResponse(id, "{\"ok\":true,\"bps_set\":" + std::to_string(count) + "}");
+    }
+    if (method == "trace_callchain_stop") {
+        mSession->disableCallchainTrace();
+        return formatResponse(id, "{\"ok\":true}");
+    }
+
+    // ── Scheduler tracing ──────────────────────────────────────
+    if (method == "trace_scheduler") {
+        int result = mSession->enableSchedulerTrace();
+        if (result < 0)
+            return formatError(id, -32000, "Cannot enable scheduler trace");
+        return formatResponse(id, "{\"ok\":true}");
+    }
+    if (method == "trace_scheduler_stop") {
+        mSession->disableSchedulerTrace();
+        return formatResponse(id, "{\"ok\":true}");
+    }
+
+    // ── Struct tracking ─────────────────────────────────────────
+    if (method == "track_struct") {
+        uint32_t addr = extractHex(paramsJson, "address");
+        uint32_t size = extractInt(paramsJson, "size");
+        if (size == 0) size = 16;
+        if (size > 4096) size = 4096;
+        int idx = mSession->enableStructTracking(addr, size);
+        if (idx < 0)
+            return formatError(id, -32000, "Cannot set struct tracking BP");
+        // Clear previous events to avoid noise
+        mSession->clearEvents();
+        return formatResponse(id, "{\"ok\":true,\"bp_index\":" + std::to_string(idx) + "}");
+    }
+    if (method == "track_struct_stop") {
+        mSession->disableStructTracking();
         return formatResponse(id, "{\"ok\":true}");
     }
 

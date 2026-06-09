@@ -343,6 +343,192 @@ def n64_read_sp_regs() -> dict[str, Any]:
     return _client().call("read_sp_regs")
 
 
+# ── display list decoder ─────────────────────────────────────
+
+_RDP_CMDS: dict[int, tuple[str, str]] = {
+    0xE6: ("G_SETCIMG", "img_addr=0x{w2:08X}"),
+    0xE5: ("G_SETZIMG", "img_addr=0x{w2:08X}"),
+    0xFD: ("G_SETTIMG", "fmt={fmt} siz={siz} width={width} addr=0x{addr:08X}"),
+    0xFC: ("G_SETCOMBINE", "m1=0x{w1:08X} m2=0x{w2:08X}"),
+    0xFA: ("G_SETENVCOLOR", "rgba=0x{w2:08X}"),
+    0xF9: ("G_SETPRIMCOLOR", "rgba=0x{w2:08X} min_lvl={min_lvl}"),
+    0xF8: ("G_SETBLENDCOLOR", "rgba=0x{w2:08X}"),
+    0xF7: ("G_SETFOGCOLOR", "rgba=0x{w2:08X}"),
+    0xF6: ("G_SETFILLCOLOR", "rgba=0x{w2:08X}"),
+    0xF4: ("G_FILLRECT", "x1={x1} y1={y1} x2={x2} y2={y2}"),
+    0xF2: ("G_SETTILESIZE", "uls={uls} ult={ult} lrs={lrs} lrt={lrt}"),
+    0xF3: ("G_LOADBLOCK", "uls={uls} ult={ult} lrs={lrs} dxt={dxt}"),
+    0xF1: ("G_LOADTILE", "uls={uls} ult={ult} lrs={lrs} lrt={lrt}"),
+    0xF5: ("G_SETTILE", "fmt={fmt} siz={siz} line={line} tmem={tmem} tile={tile} palette={pal} ct={ct} mt={mt} mask_s={msk_s} shift_s={shf_s} mask_t={msk_t} shift_t={shf_t}"),
+    0xE8: ("G_RDPLOADSYNC", ""),
+    0xE9: ("G_RDPPIPESYNC", ""),
+    0xEA: ("G_RDPTILESYNC", ""),
+    0xEB: ("G_RDPFULLSYNC", ""),
+    0xEC: ("G_SETKEYGB", "wg={wg} wb={wb} center=0x{center:04X} scale=0x{scale:04X}"),
+    0xED: ("G_SETKEYR", "wr={wr} center=0x{center:04X} scale=0x{scale:04X}"),
+    0xEE: ("G_SETCONVERT", "k=0x{w1:04X}{w2:08X}"),
+    0xEF: ("G_SETSCISSOR", "x0={x0} y0={y0} x1={x1} y1={y1}"),
+    0xF0: ("G_SETPRIMDEPTH", "z={z} dz={dz}"),
+    0xE7: ("G_RDPSETOTHERMODE", "mode0=0x{w1:08X} mode1=0x{w2:08X}"),
+    0xE4: ("G_TEXRECT", "x0={x0} y0={y0} x1={x1} y1={y1}"),
+    0xE3: ("G_TEXRECTFLIP", "x0={x0} y0={y0} x1={x1} y1={y1}"),
+    0xE1: ("G_RDPHALF_1", "val=0x{w2:08X}"),
+    0xE2: ("G_RDPHALF_2", "val=0x{w2:08X}"),
+}
+
+_RSP_CMDS: dict[int, tuple[str, str]] = {
+    0xBA: ("G_VTX", "n={n} v0={v0} vaddr=0x{w2:08X}"),
+    0xBF: ("G_TRI1", "i0={i2} i1={i1} i2={i0} flag={flag}"),
+    0xBE: ("G_TRI2", "i0={i3} i1={i4} i2={i5} i3={i0} i4={i1} i5={i2}"),
+    0xDF: ("G_ENDDL", ""),
+    0xDE: ("G_DL", "addr=0x{w2:08X} push={push}"),
+    0xBB: ("G_MODIFYVTX", "idx={idx} ofs={ofs} val=0x{w2:08X}"),
+    0xDA: ("G_MOVEMEM", "idx={idx} ofs={ofs} len={datalen} addr=0x{addr:08X}"),
+    0xDB: ("G_MOVEWORD", "idx={idx} ofs={ofs} data=0x{w2:08X}"),
+    0xB4: ("G_MTX", "addr=0x{w2:08X} params=0x{w1>>16:04X}"),
+    0x01: ("G_MTX", "addr=0x{w2:08X} params=0x{w1>>16:04X}"),
+    0x06: ("G_DMA_IO", "flags=0x{w1>>16:04X} addr=0x{w2:08X} size={size}"),
+    0x04: ("G_VTX", "n={n} v0={v0} addr=0x{w2:08X}"),
+    0x07: ("G_TRI1", "i0={i2} i1={i1} i2={i0}"),
+    0x08: ("G_TRI2", "i0={i3} i1={i4} i2={i5} i3={i0} i4={i1} i5={i2}"),
+    0xB3: ("G_SPECIAL1", "s1=0x{w1:08X} s2=0x{w2:08X}"),
+    0xB7: ("G_SPECIAL2", "s1=0x{w1:08X} s2=0x{w2:08X}"),
+}
+
+
+def _dl_fields(op: int, w1: int, w2: int, tmpl: str) -> dict[str, int]:
+    """Extract named bitfields from display list words for template formatting."""
+    d: dict[str, int] = {}
+    d["w1"] = w1
+    d["w2"] = w2
+    d["fmt"] = (w1 >> 8) & 7
+    d["siz"] = (w1 >> 10) & 3
+    d["width"] = (w1 >> 12) & 0xFFF
+    d["addr"] = w2
+    d["min_lvl"] = (w1 >> 8) & 0xFF
+    d["x1"] = (w1 >> 12) & 0xFFF
+    d["y1"] = (w1 >> 0) & 0xFFF
+    d["x2"] = (w2 >> 12) & 0xFFF
+    d["y2"] = (w2 >> 0) & 0xFFF
+    d["uls"] = (w1 >> 12) & 0xFFF
+    d["ult"] = (w1 >> 0) & 0xFFF
+    d["lrs"] = (w2 >> 12) & 0xFFF
+    d["lrt"] = (w2 >> 0) & 0xFFF
+    d["dxt"] = (w2 >> 0) & 0xFFF
+    d["line"] = (w1 >> 12) & 0x1FF
+    d["tmem"] = (w1 >> 0) & 0x1FF
+    d["tile"] = (w2 >> 24) & 7
+    d["pal"] = (w2 >> 20) & 0xF
+    d["ct"] = (w2 >> 19) & 1
+    d["mt"] = (w2 >> 18) & 1
+    d["msk_s"] = (w2 >> 14) & 0xF
+    d["shf_s"] = (w2 >> 10) & 0xF
+    d["msk_t"] = (w2 >> 4) & 0xF
+    d["shf_t"] = (w2 >> 0) & 0xF
+    d["wg"] = (w1 >> 12) & 0xFF
+    d["wb"] = (w1 >> 0) & 0xFF
+    d["center"] = (w2 >> 16) & 0xFFFF
+    d["scale"] = w2 & 0xFFFF
+    d["x0"] = (w1 >> 12) & 0xFFF
+    d["y0"] = (w1 >> 0) & 0xFFF
+    d["z"] = (w1 >> 16) & 0xFFFF
+    d["dz"] = w1 & 0xFFFF
+    d["n"] = (w1 >> 20) & 0xFF
+    d["v0"] = (w1 >> 16) & 0xF
+    d["i0"] = (w2 >> 0) & 0xFF
+    d["i1"] = (w2 >> 8) & 0xFF
+    d["i2"] = (w2 >> 16) & 0xFF
+    d["i3"] = (w1 >> 0) & 0xFF
+    d["i4"] = (w1 >> 8) & 0xFF
+    d["i5"] = (w1 >> 16) & 0xFF
+    d["flag"] = (w1 >> 0) & 0xFF
+    d["push"] = (w1 >> 16) & 1
+    d["idx"] = (w1 >> 16) & 0xFF
+    d["ofs"] = w1 & 0xFFFF
+    d["datalen"] = (w2 >> 16) & 0xFF
+    d["size"] = (w1 >> 8) & 0xFFFF
+    return d
+
+
+def _decode_dl_entry(w1: int, w2: int) -> tuple[str, str, str]:
+    """Decode one display list command (two 32-bit words). Handles RDP then RSP."""
+    op = (w1 >> 24) & 0xFF
+    d = _dl_fields(op, w1, w2)
+
+    if op in _RDP_CMDS:
+        name, tmpl = _RDP_CMDS[op]
+        desc = tmpl.format(**d)
+        return ("RDP", name, desc)
+
+    if op in _RSP_CMDS:
+        name, tmpl = _RSP_CMDS[op]
+        desc = tmpl.format(**d)
+        return ("RSP", name, desc)
+
+    return ("???", f"UNK_0x{op:02X}", f"0x{w1:08X} 0x{w2:08X}")
+
+
+# ── callchain tracing ───────────────────────────────────────
+
+
+@mcp.tool()
+def n64_trace_callchain(addresses: str, enable: bool = True) -> dict[str, Any]:
+    """Set execution breakpoints at multiple function addresses and capture
+    call/register context on each hit (RA, A0-A3). Auto-resumes after capture.
+
+    Use this to trace function call sequences and arguments without
+    manually single-stepping. Read captured events via n64_get_trace_events.
+
+    addresses: comma-separated hex addresses, e.g. "0x8011C450,0x80124C60"
+    enable:    true to start tracing, false to stop
+    Returns: {"ok": true, "bps_set": N} on enable
+    """
+    if not enable:
+        return _client().call("trace_callchain_stop")
+    return _client().call("trace_callchain", {"addresses": addresses})
+
+
+# ── scheduler tracing ───────────────────────────────────────
+
+
+@mcp.tool()
+def n64_trace_scheduler(enable: bool = True) -> dict[str, Any]:
+    """Trace the game's custom RTOS scheduler by monitoring the run queue
+    (0x8013AEA8) and context-switch function (0x80125378).
+
+    Captures:
+      - sched_ctx_switch: thread switch with RA, A0 (old TCB), A1 (new TCB)
+      - sched_queue_write: queue head pointer changes
+
+    Auto-resumes after each capture. Read events via n64_get_trace_events.
+    Supports both standard libultra and custom-run-time games.
+    """
+    if not enable:
+        return _client().call("trace_scheduler_stop")
+    return _client().call("trace_scheduler")
+
+
+# ── struct tracking ──────────────────────────────────────────
+
+
+@mcp.tool()
+def n64_track_struct(address: str, size: int = 16, enable: bool = True) -> dict[str, Any]:
+    """Watch writes to a memory region and log every change with offset/val/prev/pc.
+
+    Sets a write breakpoint on the address range. Each write is captured
+    transparently (auto-resume) and logged as a trace event. Use
+    n64_get_trace_events to read the captured writes.
+
+    address: hex address of the struct to track (e.g. "0x80147620" for OSTask)
+    size:    number of bytes to watch (default 16, max 4096)
+    enable:  true to start tracking, false to stop
+    Returns: {"ok": true, "bp_index": N} on enable
+    """
+    if not enable:
+        return _client().call("track_struct_stop")
+    return _client().call("track_struct", {"address": address, "size": size})
+
+
 # ── asset discovery ──────────────────────────────────────────
 
 
@@ -371,6 +557,41 @@ def n64_export_manifest(path: str) -> dict[str, Any]:
         _json.dump(manifest, f, indent=2)
     return {"ok": True, "path": path, "rom_regions": len(manifest.get("rom_regions", [])),
             "rdram_regions": len(manifest.get("rdram_regions", []))}
+
+
+@mcp.tool()
+def n64_dl_decode(address: str, size: int = 256) -> dict[str, Any]:
+    """Read a display list from memory and decode each GBI command.
+
+    address: hex virtual address of the display list (e.g. "0x802C0000")
+    size:    number of bytes to decode (must be multiple of 8, default 256)
+    Returns: list of decoded commands with offset, domain, name, and args.
+    """
+    if size % 8 != 0:
+        size = (size + 7) & ~7
+    raw = _client().call("read_mem", {"address": address, "size": size})
+    hex_str: str = raw.get("hex", "")
+    if not hex_str or hex_str == "0" * len(hex_str):
+        return {"address": address, "commands": [], "error": "All zeros — no display list found"}
+
+    # Big-endian: each 32-bit word is 8 hex chars
+    words = [int(hex_str[i:i+8], 16) for i in range(0, len(hex_str), 8)]
+    cmds = []
+    for i in range(0, len(words) - 1, 2):
+        w1, w2 = words[i], words[i + 1]
+        domain, name, desc = _decode_dl_entry(w1, w2)
+        offset = i * 4
+        cmds.append({
+            "offset": f"0x{offset:X}",
+            "domain": domain,
+            "name": name,
+            "args": desc,
+            "raw": f"0x{w1:08X} 0x{w2:08X}",
+        })
+        if name == "G_ENDDL":
+            break
+
+    return {"address": address, "command_count": len(cmds), "commands": cmds}
 
 
 # ── entry point ────────────────────────────────────────────────

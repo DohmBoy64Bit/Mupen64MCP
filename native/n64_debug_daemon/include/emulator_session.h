@@ -58,6 +58,16 @@ public:
     void markGameState(const std::string &label, const std::string &notes);
     std::string getCurrentStateLabel() const;
     
+    // Struct tracking
+    int enableStructTracking(uint32_t addr, uint32_t size);
+    void disableStructTracking();
+
+    // Callchain tracing
+    int enableCallchainTrace(const std::vector<uint32_t> &addresses);
+    void disableCallchainTrace();
+    int enableSchedulerTrace();
+    void disableSchedulerTrace();
+
     // PI DMA
     struct PiDmaRegs { uint32_t dramAddr; uint32_t cartAddr; uint32_t rdLen; uint32_t wrLen; uint32_t status; };
     PiDmaRegs readPiDmaRegs();
@@ -130,4 +140,22 @@ private:
     // Stepping: temporarily removed BP tracking
     uint32_t mSteppingBpAddr = 0;
     unsigned int mSteppingBpFlags = 0;
+
+    // Struct tracking
+    bool mStructTrackEnabled = false;
+    uint32_t mStructTrackAddr = 0;
+    uint32_t mStructTrackSize = 0;
+    std::vector<uint8_t> mStructTrackPrevData;
+    int mStructTrackBpIndex = -1;
+
+    // Callchain tracing
+    bool mCallchainEnabled = false;
+    std::vector<uint32_t> mCallchainAddrs;
+    std::vector<int> mCallchainBpIndices;
+
+    // Scheduler tracing
+    bool mSchedTraceEnabled = false;
+    int mSchedQueueBpIdx = -1;
+    int mSchedCtxSwitchBpIdx = -1;
+    std::vector<uint8_t> mSchedPrevQueueData;
 };
