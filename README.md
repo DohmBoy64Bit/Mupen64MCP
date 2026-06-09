@@ -201,7 +201,7 @@ Add to your Cursor MCP config:
 | `n64_dl_decode` | Display list decoder — pretty-prints F3DEX2 commands |
 | `n64_trace_callchain` | Multi-BP function call tracer — captures RA/A0-A3 on call |
 | `n64_trace_scheduler` | RTOS scheduler tracer — context switch + run queue (takes addresses) |
-| `n64_detect_os` | Detect OS type (libultra/custom), boot flow, RSP ucode, thread function addresses |
+| `n64_detect_os` | Detect OS type (libultra/likely_libultra/custom_with_libultra_functions/custom), boot flow, RSP ucode, scheduler dispatch presence, thread function addresses, active PC context |
 
 ### Asset Discovery
 | Tool | Description |
