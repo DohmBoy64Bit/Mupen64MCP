@@ -14,7 +14,7 @@ Mupen64MCP lets AI assistants (Claude Desktop, Cursor, etc.) inspect and control
              │ stdio (MCP protocol)         │
 ┌────────────▼─────────────────────────────▼───────┐
 │           n64-debug-mcp  (Python)                 │
-│  FastMCP server · 23 tools                        │
+│  FastMCP server · 29 tools                        │
 │  Thin translation layer → JSON-RPC                │
 └────────────┬─────────────────────────────┬───────┘
              │ TCP 127.0.0.1:9876           │
@@ -149,7 +149,7 @@ Add to your Cursor MCP config:
 }
 ```
 
-## MCP Tools (27 total)
+## MCP Tools (29 total)
 
 ### Lifecycle
 | Tool | Description |
@@ -198,6 +198,12 @@ Add to your Cursor MCP config:
 | `n64_wait_for_breakpoint` | Block until breakpoint fires |
 | `n64_export_trace` | Export trace events to JSON file |
 
+### PI DMA
+| Tool | Description |
+|------|-------------|
+| `n64_capture_pi_dma` | Read current PI DMA registers (source/dest/size/status) |
+| `n64_trace_pi_dma` | Enable/disable automatic PI DMA tracing on breakpoint hit |
+
 ### RSP / SP
 | Tool | Description |
 |------|-------------|
@@ -215,7 +221,7 @@ D:\Mupen64MCP\
 │       ├── pyproject.toml           # Python package config
 │       └── n64_debug_mcp/
 │           ├── __init__.py
-│           ├── server.py            # 23 MCP tools (FastMCP)
+│           ├── server.py            # 29 MCP tools (FastMCP)
 │           └── daemon_client.py     # TCP JSON-RPC client
 ├── native/
 │   └── n64_debug_daemon/
@@ -261,18 +267,20 @@ D:\Mupen64MCP\
 - Config auto-set: `EnableDebugger=1`, `R4300Emulator=0` (Pure Interpreter)
 - `onDebuggerUpdate` callback propagates pause state via semaphore
 - JSON-RPC over TCP with space-tolerant parser
-- 23 MCP tools via FastMCP
+- 29 MCP tools via FastMCP
 - Python daemon client with one-connection-per-call pattern
 - Breakpoint → resume → wait loop for runtime debugging
 - ROM-read DMA tracing (PI register capture)
 - Game state labeling
 - Trace export to JSON
 - Verified boot flow, register access, stepping, and memory reads on Cruis'n USA
+- Resume/step now correctly escapes breakpoint at current PC (temporarily removes BP to prevent re-catch in `update_debugger`)
+- Single-step advances PC correctly through arbitrary MIPS instructions including branches
 
 ### Known Limitations
-- `DebugStep()` in resume may execute one instruction before breakpoint check (observed: BP PC vs actual PC mismatch)
 - One TCP connection per request — no daemon-side blocking for `wait_for_breakpoint` (implemented as client-side poll loop)
 - Only interpreter mode produces reliable debugger callbacks
+- Frame counter requires VI interrupts (dummy gfx plugins may not increment it)
 
 ### Tested ROM
 - **Cruis'n USA** (NCUE) — CRC `FF2F2FB4 D161149A`, 8 MB

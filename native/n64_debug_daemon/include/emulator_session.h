@@ -51,12 +51,16 @@ public:
     // Tracing
     void enableRomReadTrace(bool enabled);
     void enableRspTrace(bool enabled);
-    void enableAudioTrace(bool enabled);
+    void enablePiDmaTrace(bool enabled);
     std::vector<TraceEvent> getRecentEvents(uint32_t count);
     std::vector<TraceEvent> getAllEvents();
     void clearEvents();
     void markGameState(const std::string &label, const std::string &notes);
     std::string getCurrentStateLabel() const;
+    
+    // PI DMA
+    struct PiDmaRegs { uint32_t dramAddr; uint32_t cartAddr; uint32_t rdLen; uint32_t wrLen; uint32_t status; };
+    PiDmaRegs readPiDmaRegs();
 
     // Safety
     void setAllowMemoryWrite(bool allow) { mAllowMemoryWrite = allow; }
@@ -120,5 +124,10 @@ private:
     // Trace flags
     bool mTraceRomRead = false;
     bool mTraceRsp = false;
-    bool mTraceAudio = false;
+    bool mTracePiDma = false;
+    uint32_t mLastPiStatus = 0;
+
+    // Stepping: temporarily removed BP tracking
+    uint32_t mSteppingBpAddr = 0;
+    unsigned int mSteppingBpFlags = 0;
 };

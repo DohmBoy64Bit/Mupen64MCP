@@ -361,6 +361,23 @@ std::string JsonRpcServer::handleMethod(const std::string &method,
         return formatResponse(id, "{\"ok\":true}");
     }
 
+    // PI DMA
+    if (method == "capture_pi_dma") {
+        auto regs = mSession->readPiDmaRegs();
+        char buf[512];
+        snprintf(buf, sizeof(buf),
+                 "{\"dram_addr\":%s,\"cart_addr\":%s,\"rd_len\":%s,\"wr_len\":%s,\"status\":%s}",
+                 hexStr(regs.dramAddr).c_str(), hexStr(regs.cartAddr).c_str(),
+                 hexStr(regs.rdLen).c_str(), hexStr(regs.wrLen).c_str(),
+                 hexStr(regs.status).c_str());
+        return formatResponse(id, buf);
+    }
+    if (method == "enable_pi_dma_trace") {
+        bool enable = extractBool(paramsJson, "enable");
+        mSession->enablePiDmaTrace(enable);
+        return formatResponse(id, "{\"ok\":true}");
+    }
+
     // SP / RSP
     if (method == "read_sp_mem") {
         uint32_t offset = extractHex(paramsJson, "offset");

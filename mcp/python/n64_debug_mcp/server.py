@@ -274,6 +274,31 @@ def n64_export_trace(path: str, count: int = 0) -> dict[str, Any]:
     return {"ok": True, "path": path, "events_written": len(events)}
 
 
+# ── PI DMA ───────────────────────────────────────────────────
+
+
+@mcp.tool()
+def n64_capture_pi_dma() -> dict[str, Any]:
+    """Read the current PI DMA registers (DRAM_ADDR, CART_ADDR, RD_LEN,
+    WR_LEN, STATUS).
+
+    Use this to inspect the last PI DMA transfer (ROM → RDRAM or
+    RDRAM → ROM) and determine source/destination/size.
+    """
+    return _client().call("capture_pi_dma")
+
+
+@mcp.tool()
+def n64_trace_pi_dma(enable: bool) -> dict[str, Any]:
+    """Enable or disable automatic PI DMA tracing.
+
+    When enabled, every PI DMA completion is logged as a trace
+    event with source (cart address), destination (DRAM address),
+    and transfer size.
+    """
+    return _client().call("enable_pi_dma_trace", {"enable": enable})
+
+
 # ── RSP / SP ───────────────────────────────────────────────────
 
 

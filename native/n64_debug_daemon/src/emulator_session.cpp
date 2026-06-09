@@ -351,18 +351,53 @@ void EmulatorSession::pause() {
 
 void EmulatorSession::resume() {
     if (!mEmuRunning || !mEmuPaused) return;
+
+    uint32_t pc = getPC();
+
+    // Temporarily remove any exec BP at the current PC so update_debugger
+    // doesn't re-catch it before the instruction can execute.
+    int bpIdx = -1;
+    if (isDebuggerAvailable() && pc != 0) {
+        bpIdx = mAPI.DebugBreakpointLookup(pc, 4, M64P_BKP_FLAG_EXEC | M64P_BKP_FLAG_ENABLED);
+        if (bpIdx >= 0)
+            mAPI.DebugBreakpointCommand(M64P_BKP_CMD_REMOVE_IDX, bpIdx, nullptr);
+    }
+
     if (mAPI.DebugSetRunState)
         mAPI.DebugSetRunState(M64P_DBG_RUNSTATE_RUNNING);
     mAPI.CoreDoCommand(M64CMD_RESUME, 0, nullptr);
-    mEmuPaused = false;
-    // Post semaphore to unblock emulator thread
     if (mAPI.DebugStep)
         mAPI.DebugStep();
+    mEmuPaused = false;
+
+    // Re-add the BP — the emulator has already moved past it.
+    if (bpIdx >= 0 && pc != 0) {
+        m64p_breakpoint bp;
+        bp.address = pc;
+        bp.endaddr = pc;
+        bp.flags = M64P_BKP_FLAG_EXEC | M64P_BKP_FLAG_ENABLED;
+        mAPI.DebugBreakpointCommand(M64P_BKP_CMD_ADD_STRUCT, 0, &bp);
+    }
 }
 
 bool EmulatorSession::stepInstruction() {
     if (!mEmuRunning || !mEmuPaused || !isDebuggerAvailable())
         return false;
+
+    uint32_t pc = getPC();
+
+    // Remove any exec BP at the current PC so the instruction can execute.
+    mSteppingBpAddr = 0;
+    mSteppingBpFlags = 0;
+    if (pc != 0) {
+        int bpIdx = mAPI.DebugBreakpointLookup(pc, 4, M64P_BKP_FLAG_EXEC | M64P_BKP_FLAG_ENABLED);
+        if (bpIdx >= 0) {
+            mSteppingBpAddr = pc;
+            mSteppingBpFlags = M64P_BKP_FLAG_EXEC | M64P_BKP_FLAG_ENABLED;
+            mAPI.DebugBreakpointCommand(M64P_BKP_CMD_REMOVE_IDX, bpIdx, nullptr);
+        }
+    }
+
     mAPI.DebugSetRunState(M64P_DBG_RUNSTATE_STEPPING);
     m64p_error r = mAPI.DebugStep();
     return r == M64ERR_SUCCESS;
@@ -596,8 +631,23 @@ void EmulatorSession::enableRspTrace(bool enabled) {
     mTraceRsp = enabled;
 }
 
-void EmulatorSession::enableAudioTrace(bool enabled) {
-    mTraceAudio = enabled;
+void EmulatorSession::enablePiDmaTrace(bool enabled) {
+    mTracePiDma = enabled;
+    if (enabled) {
+        clearEvents();
+        mLastPiStatus = 0;
+    }
+}
+
+EmulatorSession::PiDmaRegs EmulatorSession::readPiDmaRegs() {
+    PiDmaRegs regs = {0, 0, 0, 0, 0};
+    if (!mCoreLoaded || !isDebuggerAvailable()) return regs;
+    regs.dramAddr = mAPI.DebugMemRead32(0xA4600000);
+    regs.cartAddr = mAPI.DebugMemRead32(0xA4600004);
+    regs.rdLen    = mAPI.DebugMemRead32(0xA4600008);
+    regs.wrLen    = mAPI.DebugMemRead32(0xA460000C);
+    regs.status   = mAPI.DebugMemRead32(0xA4600010);
+    return regs;
 }
 
 std::vector<TraceEvent> EmulatorSession::getRecentEvents(uint32_t count) {
@@ -654,10 +704,57 @@ void EmulatorSession::onCoreStateChange(m64p_core_param param, int value) {
 
 void EmulatorSession::onDebuggerUpdate(unsigned int pc) {
     // Check if core debugger is paused (breakpoint hit)
+    bool nowPaused = false;
     if (mAPI.DebugGetState && mAPI.DebugGetState(M64P_DBG_RUN_STATE) == M64P_DBG_RUNSTATE_PAUSED) {
         mEmuPaused = true;
+        nowPaused = true;
     }
+
+    // STEPPING mode: one instruction just executed — pause now.
+    if (mAPI.DebugGetState && mAPI.DebugGetState(M64P_DBG_RUN_STATE) == M64P_DBG_RUNSTATE_STEPPING) {
+        mAPI.DebugSetRunState(M64P_DBG_RUNSTATE_PAUSED);
+        // Post an extra semaphore token so the current update_debugger call
+        // unblocks (it will see PAUSED and wait, but this token satisfies it,
+        // allowing InterpretOpcode to run exactly once before the next block).
+        mAPI.DebugStep();
+        // Re-add the BP we removed for this step
+        if (mSteppingBpAddr != 0) {
+            m64p_breakpoint bp;
+            bp.address = mSteppingBpAddr;
+            bp.endaddr = mSteppingBpAddr;
+            bp.flags = mSteppingBpFlags;
+            mAPI.DebugBreakpointCommand(M64P_BKP_CMD_ADD_STRUCT, 0, &bp);
+            mSteppingBpAddr = 0;
+            mSteppingBpFlags = 0;
+        }
+        mEmuPaused = true;
+        nowPaused = true;
+    }
+
     std::lock_guard<std::mutex> lock(mEventMutex);
+    
+    // PI DMA tracing: when paused after a BP hit, check if PI DMA completed
+    if (mTracePiDma && nowPaused && isDebuggerAvailable()) {
+        uint32_t status = mAPI.DebugMemRead32(0xA4600010);
+        // PI_STATUS bit 0 = DMA busy; when it transitions 1→0, a DMA just completed
+        if ((mLastPiStatus & 1) && !(status & 1)) {
+            TraceEvent dmaEv;
+            dmaEv.frame = mFrameCounter;
+            dmaEv.type = "pi_dma";
+            dmaEv.pc = pc;
+            dmaEv.stateLabel = mCurrentStateLabel;
+            uint32_t dram = mAPI.DebugMemRead32(0xA4600000);
+            uint32_t cart = mAPI.DebugMemRead32(0xA4600004);
+            uint32_t len  = mAPI.DebugMemRead32(0xA4600008);
+            char buf[128];
+            snprintf(buf, sizeof(buf), "{\"dram\":\"0x%X\",\"cart\":\"0x%X\",\"len\":%u}",
+                     dram, cart, len + 1);
+            dmaEv.data.push_back({"pi_dma", buf});
+            mEvents.push_back(dmaEv);
+        }
+        mLastPiStatus = status;
+    }
+    
     TraceEvent ev;
     ev.frame = mFrameCounter;
     ev.type = "step";
