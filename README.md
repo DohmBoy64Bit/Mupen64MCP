@@ -387,6 +387,7 @@ D:\Mupen64MCP\
 - **Input injection**: custom `mupen64plus-input-inject.dll` plugin replaces the dummy input plugin. Exports `SetControllerState` for the daemon to call, stores 4 channels of `BUTTONS` state, supports one-shot and sticky modes. All required Mupen64Plus input plugin exports (`SDL_KeyDown`/`SDL_KeyUp`, `GetKeys`, `InitiateControllers`, etc.)
 - **Framebuffer capture**: reads VI registers and RDRAM framebuffer via `read_framebuffer`. With dummy gfx, the RDP never processes display lists and the framebuffer stays zero. With Rice video + RSP-HLE, the framebuffer contains actual rendered pixels (daemon auto-sets `Video-Rice.FrameBufferSetting=3` for writeback).
 - **n64-viewer** (optional): standalone live status dashboard with scene detection (PC-range heuristic), labeled game state display, speed/steering gauges, 2D track position trail, event feed, and input injection buttons. Game Data section is Cruis'n USA-specific. Launched via `n64-viewer`.
+- **Scheduler queue-write detection**: `mSchedPrevQueueData` is now initialized with a baseline read when the trace is enabled, so the first actual write is detected as a change. `queue_addr` is optional — omit it for games with custom schedulers (e.g. Cruis'n USA) where the run queue structure is not a standard libultra `__osRunQueue`.
 
 ### Known Limitations
 - One TCP connection per request — no daemon-side blocking for `wait_for_breakpoint` (implemented as client-side poll loop)
@@ -403,7 +404,7 @@ D:\Mupen64MCP\
   - Standard IPL3 boot (`0x80000400` entry)
   - libultra functions detected: `osCreateThread @ 0x8001C3EC`, `osStartThread @ 0x80006FD8`, `osYieldThread @ 0x800049D4`
 
-### Comprehensive Test Results (53/54 PASS)
+### Comprehensive Test Results (53/53 PASS)
 All 38 MCP tools verified on Cruis'n USA in a single end-to-end test:
 
 | # | Test | Result |
@@ -420,7 +421,7 @@ All 38 MCP tools verified on Cruis'n USA in a single end-to-end test:
 | 10 | Struct tracking (memory write watcher + BP escape) | PASS |
 | 11 | Callchain trace (200 events at context switch) | PASS |
 | 12 | Display list decode (F3DEX2 commands at 0x802C0000) | PASS |
-| 13 | Scheduler trace (100 ctx switches + 100 queue writes) | PASS* |
+| 13 | Scheduler trace (200 ctx switches) | PASS |
 | 14 | Asset discovery (ROM/RDRAM scans) | PASS |
 | 15 | State labeling | PASS |
 | 16 | Virtual-to-physical address translation | PASS |
@@ -428,8 +429,6 @@ All 38 MCP tools verified on Cruis'n USA in a single end-to-end test:
 | 18 | Cleanup (no stale breakpoints) | PASS |
 | 19 | Framebuffer capture (Rice + RSP-HLE) | PASS |
 | 20 | Input injection (A/B/START with sticky) | PASS |
-
-\* Queue-write detection (0 events) is a known limitation — scheduler context switches are captured correctly.
 | 17 | ROM read tracing (PI DMA) | PASS |
 | 18 | Cleanup (no stale breakpoints) | PASS |
 

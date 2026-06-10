@@ -830,7 +830,11 @@ int EmulatorSession::enableSchedulerTrace(uint32_t ctxSwitchAddr, uint32_t queue
         bp.endaddr = queueAddr + 15;
         bp.flags = M64P_BKP_FLAG_WRITE;
         int idx = mAPI.DebugBreakpointCommand(M64P_BKP_CMD_ADD_STRUCT, 0, &bp);
-        if (idx >= 0) mSchedQueueBpIdx = idx;
+        if (idx >= 0) {
+            mSchedQueueBpIdx = idx;
+            // Capture baseline so the first actual write is detected as a change
+            mSchedPrevQueueData = readMemory(queueAddr, 16);
+        }
     }
     mSchedTraceEnabled = true;
     return (mSchedCtxSwitchBpIdx >= 0 || mSchedQueueBpIdx >= 0) ? 1 : -1;
