@@ -308,6 +308,30 @@ class N64Viewer:
                   font=("Consolas", 9), bg="#0f3460", fg="white").pack(pady=2)
 
     def _build_events_tab(self):
+        # Trace controls
+        trace_frame = tk.Frame(self.tab_events, bg="#1a1a2e")
+        trace_frame.pack(fill="x", padx=4, pady=2)
+
+        tk.Label(trace_frame, text="Traces:", font=("Consolas", 9, "bold"),
+                 fg="white", bg="#1a1a2e").pack(side="left", padx=2)
+
+        self.trace_buttons = {}
+        trace_types = [
+            ("ROM Reads", "trace_rom_reads", "#0f3460"),
+            ("Callchain", "trace_callchain", "#0f3460"),
+            ("Scheduler", "trace_scheduler", "#0f3460"),
+            ("Struct", "track_struct", "#0f3460"),
+        ]
+        for name, method, color in trace_types:
+            btn = tk.Button(trace_frame, text=f"{name}: OFF", font=("Consolas", 8),
+                            bg=color, fg="white", width=14)
+            btn.pack(side="left", padx=1)
+            self.trace_buttons[method] = btn
+            btn.config(command=lambda m=method, b=btn: self._toggle_trace(m, b))
+
+        tk.Button(trace_frame, text="Clear", command=self._clear_events,
+                  font=("Consolas", 9), bg="#e94560", fg="white").pack(side="left", padx=4)
+
         self.event_text = tk.Text(self.tab_events, height=20, font=("Consolas", 9),
                                    wrap="none", bg="#0a0a0a", fg="#ccc",
                                    insertbackground="white")
@@ -458,6 +482,34 @@ class N64Viewer:
                 if e.get("data"):
                     extra = " " + " ".join(f"{d['key']}={d['value']}" for d in e["data"][:2])
                 self.event_text.insert("end", f"f{f:>6} {etype:<12s} {epc}{extra}\n")
+        self.event_text.config(state="disabled")
+
+    def _toggle_trace(self, method, btn):
+        current_text = btn.cget("text")
+        is_on = "ON" in current_text
+        new_state = not is_on
+
+        if method == "trace_rom_reads":
+            self._safe_call("trace_rom_reads", {"enable": new_state})
+        elif method == "trace_callchain":
+            addr = "0x80004D90"  # Default context switch addr
+            self._safe_call("trace_callchain", {"addresses": addr, "enable": new_state})
+        elif method == "trace_scheduler":
+            addr = "0x80004D90"
+            self._safe_call("trace_scheduler", {"ctx_switch_addr": addr, "enable": new_state})
+        elif method == "track_struct":
+            addr = "0x80100000"
+            self._safe_call("track_struct", {"address": addr, "size": 16, "enable": new_state})
+
+        if new_state:
+            btn.config(text=current_text.replace("OFF", "ON"), bg="#33AA33")
+        else:
+            btn.config(text=current_text.replace("ON", "OFF"), bg="#0f3460")
+
+    def _clear_events(self):
+        self._safe_call("clear_events")
+        self.event_text.config(state="normal")
+        self.event_text.delete("1.0", "end")
         self.event_text.config(state="disabled")
 
     def _update_framebuffer(self):
