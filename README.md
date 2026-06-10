@@ -399,17 +399,25 @@ D:\Mupen64MCP\
 - Only interpreter mode produces reliable debugger callbacks
 - Frame counter requires VI interrupts (dummy gfx plugins may not increment it)
 - Input injection requires passing `--input path/to/mupen64plus-input-inject.dll` at daemon startup
+- **Rice video plugin framebuffer writeback compatibility**: Works with Star Fox 64 (standard F3D ucode) but produces black framebuffer with Cruis'n USA (custom F3DEX-based microcode). This is a plugin limitation, not a daemon bug — the framebuffer dimensions and format are correctly reported. For pixel-accurate capture on all ROMs, a different video plugin or renderer may be needed.
 
 ### Tested ROMs
 - **Cruis'n USA** (NCUE) — CRC `FF2F2FB4 D161149A`, 8 MB
   - Custom Midway engine (PIF jumps to `0x8011C450`, bypassing IPL3)
   - Custom F3DEX-based RSP microcode at ROM offset `0x31000` (custom implementation, standard F3DEX2 GBI commands)
   - Boot flow: `PIF (0xA4000040)` → `0x80000000` trampoline → `0x80124C60` → `0x8011C450`
+- **Cruis'n USA** (NCUE) — also tested with real video plugin (Rice + RSP-HLE)
+  - **Tested with real video plugin**: 21/21 viewer API calls PASS
+  - Framebuffer: 320×240 RGBA8888 but **pixels are zero** (all black)
+  - Rice video plugin framebuffer writeback does not work with Cruis'n USA's custom F3DEX-based microcode (works with Star Fox 64 standard F3D)
+  - Frame rate: ~58 FPS, 30 auto-captures in 5 seconds
+  - RSP task type: 0x02 (standard F3D ucode — GBI commands are standard F3DEX2, but RSP implementation is custom)
+  - PI DMA active: dram=0x003BF9E0
 - **Star Fox 64** (LZ-type) — CRC `BA780BA0 0F21DB34`, 12 MB
   - Standard IPL3 boot (`0x80000400` entry)
   - libultra functions detected: `osCreateThread @ 0x8001C3EC`, `osStartThread @ 0x80006FD8`, `osYieldThread @ 0x800049D4`
   - **Tested with real video plugin** (Rice + RSP-HLE): 21/21 viewer API calls PASS
-  - Framebuffer: 320×240 RGBA8888 with actual non-zero pixels after initial render
+  - Framebuffer: 320×240 RGBA8888 with **actual non-zero pixels** after initial render
   - Frame rate: ~60 FPS, 31 auto-captures in 5 seconds (10-frame interval)
   - RSP task type: 0x02 (standard F3D ucode)
 
