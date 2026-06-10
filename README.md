@@ -150,8 +150,30 @@ native/n64_debug_daemon/build/n64-debug-daemon.exe ^
   --port 9876
 ```
 
-For input injection, pass the path to `mupen64plus-input-inject.dll` as `--input`.
-Omit `--input` (or set `--input dummy`) to use the built-in dummy input plugin.
+### Daemon Config Options
+
+| Option | Description | Default | Example |
+|--------|-------------|---------|---------|
+| `--core <path>` | Path to `mupen64plus.dll` | `libmupen64plus.dll` | `--core build/mupen64plus/lib/mupen64plus.dll` |
+| `--rom <path>` | ROM file to load | *(none)* | `--rom roms/starfox64.z64` |
+| `--gfx <path>` | Video plugin DLL | `dummy` | `--gfx plugins/mupen64plus-video-rice.dll` |
+| `--audio <path>` | Audio plugin DLL | `dummy` | `--audio dummy` |
+| `--input <path>` | Input plugin DLL | `dummy` | `--input native/n64_debug_daemon/build/mupen64plus-input-inject.dll` |
+| `--rsp <path>` | RSP plugin DLL | `dummy` | `--rsp plugins/mupen64plus-rsp-hle.dll` |
+| `--datadir <dir>` | Shared data directory | `.` | `--datadir build/mupen64plus/share` |
+| `--configdir <dir>` | Config directory | `.` | `--configdir build/mupen64plus/config` |
+| `--port <n>` | JSON-RPC TCP port | `9876` | `--port 9876` |
+| `--allow-write-memory` | Enable memory writes (default is read-only) | *(disabled)* | `--allow-write-memory` |
+| `--help` | Show help | | `--help` |
+
+**Plugin notes:**
+- `--input dummy` — use built-in dummy input (no controller injection)
+- `--input mupen64plus-input-inject.dll` — enables controller injection via `n64_set_controller`
+- `--gfx dummy` — no video rendering (fastest, for debugging)
+- `--gfx mupen64plus-video-rice.dll` — real OpenGL rendering (for framebuffer capture)
+- `--rsp dummy` — no RSP processing (display lists won't render)
+- `--rsp mupen64plus-rsp-hle.dll` — RSP HLE (required for real rendering)
+- `--audio dummy` — no audio output (recommended for debugging)
 
 ### Injecting controller input
 
