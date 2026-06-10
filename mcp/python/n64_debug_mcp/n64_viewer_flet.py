@@ -126,18 +126,18 @@ def main(page: ft.Page):
     state_text = ft.Text("STOPPED", size=12, color=STATUS_RED, weight=ft.FontWeight.BOLD)
 
     # Controls
-    btn_resume = ft.ElevatedButton("▶ Resume", bgcolor=STATUS_GREEN, color="white", on_click=lambda e: send_resume())
-    btn_pause = ft.ElevatedButton("⏸ Pause", bgcolor=STATUS_YELLOW, color="white", on_click=lambda e: send_pause())
-    btn_step = ft.ElevatedButton("⏭ Step", bgcolor=ACCENT, color="white", on_click=lambda e: send_step())
+    btn_resume = ft.Button("▶ Resume", bgcolor=STATUS_GREEN, color="white", on_click=lambda e: send_resume())
+    btn_pause = ft.Button("⏸ Pause", bgcolor=STATUS_YELLOW, color="white", on_click=lambda e: send_pause())
+    btn_step = ft.Button("⏭ Step", bgcolor=ACCENT, color="white", on_click=lambda e: send_step())
 
     # Input buttons
-    btn_a = ft.ElevatedButton("A", width=40, height=35, bgcolor="#ef4444", color="white", on_click=lambda e: send_input("0x0080"))
-    btn_b = ft.ElevatedButton("B", width=40, height=35, bgcolor="#eab308", color="white", on_click=lambda e: send_input("0x0040"))
-    btn_z = ft.ElevatedButton("Z", width=40, height=35, bgcolor="#a855f7", color="white", on_click=lambda e: send_input("0x0020"))
-    btn_start = ft.ElevatedButton("START", width=70, height=35, bgcolor="#06b6d4", color="white", on_click=lambda e: send_input("0x0010"))
-    btn_r = ft.ElevatedButton("R", width=40, height=35, bgcolor=BG_CARD, color=TEXT_PRIMARY, on_click=lambda e: send_input("0x1000"))
-    btn_l = ft.ElevatedButton("L", width=40, height=35, bgcolor=BG_CARD, color=TEXT_PRIMARY, on_click=lambda e: send_input("0x2000"))
-    btn_reset = ft.ElevatedButton("Reset", width=80, height=30, bgcolor=BORDER_CARD, color=TEXT_PRIMARY, on_click=lambda e: reset_stick())
+    btn_a = ft.Button("A", width=40, height=35, bgcolor="#ef4444", color="white", on_click=lambda e: send_input("0x0080"))
+    btn_b = ft.Button("B", width=40, height=35, bgcolor="#eab308", color="white", on_click=lambda e: send_input("0x0040"))
+    btn_z = ft.Button("Z", width=40, height=35, bgcolor="#a855f7", color="white", on_click=lambda e: send_input("0x0020"))
+    btn_start = ft.Button("START", width=70, height=35, bgcolor="#06b6d4", color="white", on_click=lambda e: send_input("0x0010"))
+    btn_r = ft.Button("R", width=40, height=35, bgcolor=BG_CARD, color=TEXT_PRIMARY, on_click=lambda e: send_input("0x1000"))
+    btn_l = ft.Button("L", width=40, height=35, bgcolor=BG_CARD, color=TEXT_PRIMARY, on_click=lambda e: send_input("0x2000"))
+    btn_reset = ft.Button("Reset", width=80, height=30, bgcolor=BORDER_CARD, color=TEXT_PRIMARY, on_click=lambda e: reset_stick())
 
     # Analog stick
     stick_x = 0
@@ -165,15 +165,15 @@ def main(page: ft.Page):
     os_text = ft.TextField(multiline=True, read_only=True, min_lines=15, bgcolor=BG_CARD, border_color=BORDER_CARD, color=TEXT_PRIMARY, text_size=12)
 
     events_list = ft.ListView(height=300, spacing=2, auto_scroll=True)
-    btn_trace_callchain = ft.ElevatedButton("Callchain: OFF", width=140, height=30, bgcolor=BG_CARD, color=TEXT_SECONDARY, on_click=lambda e: toggle_trace("callchain"))
-    btn_trace_scheduler = ft.ElevatedButton("Scheduler: OFF", width=140, height=30, bgcolor=BG_CARD, color=TEXT_SECONDARY, on_click=lambda e: toggle_trace("scheduler"))
-    btn_trace_rom = ft.ElevatedButton("ROM Reads: OFF", width=140, height=30, bgcolor=BG_CARD, color=TEXT_SECONDARY, on_click=lambda e: toggle_trace("rom_reads"))
-    btn_trace_struct = ft.ElevatedButton("Struct: OFF", width=140, height=30, bgcolor=BG_CARD, color=TEXT_SECONDARY, on_click=lambda e: toggle_trace("struct"))
-    btn_clear_events = ft.ElevatedButton("Clear", width=80, height=30, bgcolor=BORDER_CARD, color=TEXT_PRIMARY, on_click=lambda e: clear_events())
+    btn_trace_callchain = ft.Button("Callchain: OFF", width=140, height=30, bgcolor=BG_CARD, color=TEXT_SECONDARY, on_click=lambda e: toggle_trace("callchain"))
+    btn_trace_scheduler = ft.Button("Scheduler: OFF", width=140, height=30, bgcolor=BG_CARD, color=TEXT_SECONDARY, on_click=lambda e: toggle_trace("scheduler"))
+    btn_trace_rom = ft.Button("ROM Reads: OFF", width=140, height=30, bgcolor=BG_CARD, color=TEXT_SECONDARY, on_click=lambda e: toggle_trace("rom_reads"))
+    btn_trace_struct = ft.Button("Struct: OFF", width=140, height=30, bgcolor=BG_CARD, color=TEXT_SECONDARY, on_click=lambda e: toggle_trace("struct"))
+    btn_clear_events = ft.Button("Clear", width=80, height=30, bgcolor=BORDER_CARD, color=TEXT_PRIMARY, on_click=lambda e: clear_events())
 
     bp_list = ft.ListView(height=300, spacing=2, auto_scroll=True)
     bp_address = ft.TextField(value="0x80000000", width=150, bgcolor=BG_CARD, border_color=BORDER_CARD, color=TEXT_PRIMARY, text_size=12)
-    btn_add_bp = ft.ElevatedButton("Add", width=60, height=30, bgcolor=ACCENT, color="white", on_click=lambda e: add_bp())
+    btn_add_bp = ft.Button("Add", width=60, height=30, bgcolor=ACCENT, color="white", on_click=lambda e: add_bp())
 
     # ── Content panels ─────────────────────────────────────
     def build_fb_tab():
@@ -184,8 +184,8 @@ def main(page: ft.Page):
             ft.Row([
                 ft.Text("Capture Interval:", size=12, color=TEXT_SECONDARY),
                 fb_interval,
-                ft.ElevatedButton("Set", width=50, height=30, bgcolor=ACCENT, color="white", on_click=lambda e: set_capture_interval()),
-                ft.ElevatedButton("Refresh", width=70, height=30, bgcolor=BG_CARD, color=TEXT_PRIMARY, on_click=lambda e: refresh_fb()),
+                ft.Button("Set", width=50, height=30, bgcolor=ACCENT, color="white", on_click=lambda e: set_capture_interval()),
+                ft.Button("Refresh", width=70, height=30, bgcolor=BG_CARD, color=TEXT_PRIMARY, on_click=lambda e: refresh_fb()),
             ], alignment=ft.MainAxisAlignment.CENTER, spacing=8),
             ft.Divider(height=1, color=BORDER_CARD),
             ft.Text("Recent Captures", size=14, color=TEXT_PRIMARY, weight=ft.FontWeight.BOLD),
@@ -207,7 +207,7 @@ def main(page: ft.Page):
                 mem_addr_field,
                 ft.Text("Size:", size=12, color=TEXT_SECONDARY),
                 mem_size_field,
-                ft.ElevatedButton("Read", width=60, height=30, bgcolor=ACCENT, color="white", on_click=lambda e: read_memory()),
+                ft.Button("Read", width=60, height=30, bgcolor=ACCENT, color="white", on_click=lambda e: read_memory()),
             ], spacing=8),
             ft.Container(content=mem_text, border=ft.BorderSide(1, BORDER_CARD), border_radius=4, padding=8, bgcolor=BG_CARD, expand=True),
         ], scroll=ft.ScrollMode.AUTO, expand=True)
@@ -216,7 +216,7 @@ def main(page: ft.Page):
         return ft.Column([
             ft.Text("OS Information", size=16, color=TEXT_PRIMARY, weight=ft.FontWeight.BOLD),
             ft.Row([
-                ft.ElevatedButton("🔍 Detect OS", width=120, height=35, bgcolor=ACCENT, color="white", on_click=lambda e: detect_os()),
+                ft.Button("🔍 Detect OS", width=120, height=35, bgcolor=ACCENT, color="white", on_click=lambda e: detect_os()),
             ], spacing=8),
             ft.Container(content=os_text, border=ft.BorderSide(1, BORDER_CARD), border_radius=4, padding=8, bgcolor=BG_CARD, expand=True),
         ], scroll=ft.ScrollMode.AUTO, expand=True)
@@ -239,7 +239,7 @@ def main(page: ft.Page):
                 ft.Text("Address:", size=12, color=TEXT_SECONDARY),
                 bp_address,
                 btn_add_bp,
-                ft.ElevatedButton("Remove All", width=90, height=30, bgcolor=STATUS_RED, color="white", on_click=lambda e: remove_all_bp()),
+                ft.Button("Remove All", width=90, height=30, bgcolor=STATUS_RED, color="white", on_click=lambda e: remove_all_bp()),
             ], spacing=8),
             ft.Container(content=bp_list, border=ft.BorderSide(1, BORDER_CARD), border_radius=4, padding=8, bgcolor=BG_CARD, expand=True),
         ], scroll=ft.ScrollMode.AUTO, expand=True)
@@ -326,6 +326,42 @@ def main(page: ft.Page):
         expand=True
     )
 
+    def reset_stick():
+        nonlocal stick_x, stick_y
+        stick_x, stick_y = 0, 0
+        stick_dot.left = 58
+        stick_dot.top = 58
+        stick_label.value = "X: 0  Y: 0"
+        send_input("0x0000")
+        page.update()
+
+    def on_stick_start(e: ft.DragStartEvent):
+        pass
+    def on_stick_update(e: ft.DragUpdateEvent):
+        nonlocal stick_x, stick_y
+        cx, cy = 60, 60
+        dx = e.local_x - cx
+        dy = e.local_y - cy
+        dist = (dx*dx + dy*dy) ** 0.5
+        max_r = 50
+        if dist > max_r:
+            dx = dx * max_r / dist
+            dy = dy * max_r / dist
+        stick_x = max(-128, min(127, int(dx * 128 / max_r)))
+        stick_y = max(-128, min(127, int(-dy * 128 / max_r)))
+        stick_dot.left = cx + dx - 6
+        stick_dot.top = cy + dy - 6
+        stick_label.value = f"X: {stick_x}  Y: {stick_y}"
+        page.update()
+    def on_stick_end(e: ft.DragEndEvent):
+        nonlocal stick_x, stick_y
+        stick_x, stick_y = 0, 0
+        stick_dot.left = 58
+        stick_dot.top = 58
+        stick_label.value = "X: 0  Y: 0"
+        send_input("0x0000")
+        page.update()
+
     # ── Input Card ─────────────────────────────────────────
     input_card = ft.Container(
         content=ft.Column([
@@ -344,7 +380,7 @@ def main(page: ft.Page):
                     ]),
                     width=120,
                     height=120,
-                    alignment=ft.alignment.center,
+                    alignment='center',
                 ),
                 on_pan_start=on_stick_start,
                 on_pan_update=on_stick_update,
@@ -359,7 +395,7 @@ def main(page: ft.Page):
         bgcolor=BG_CARD,
         border=ft.BorderSide(1, BORDER_CARD),
         width=200,
-        alignment=ft.alignment.center
+        alignment='center'
     )
 
     # ── Right panel (cards) ─────────────────────────────────
@@ -397,8 +433,8 @@ def main(page: ft.Page):
     host_field = ft.TextField(value="127.0.0.1", width=140, bgcolor=BG_CARD, border_color=BORDER_CARD, color=TEXT_PRIMARY)
     port_field = ft.TextField(value="9876", width=80, bgcolor=BG_CARD, border_color=BORDER_CARD, color=TEXT_PRIMARY)
     startup_status = ft.Text("Checking for daemon...", size=14, color=TEXT_SECONDARY)
-    btn_start_daemon = ft.ElevatedButton("🚀 Start Daemon & Connect", width=220, height=45, bgcolor=ACCENT, color="white", on_click=lambda e: start_daemon_click())
-    btn_connect = ft.ElevatedButton("🔗 Connect to Existing", width=200, height=40, bgcolor=BG_CARD, color=TEXT_PRIMARY, on_click=lambda e: connect_click())
+    btn_start_daemon = ft.Button("🚀 Start Daemon & Connect", width=220, height=45, bgcolor=ACCENT, color="white", on_click=lambda e: start_daemon_click())
+    btn_connect = ft.Button("🔗 Connect to Existing", width=200, height=40, bgcolor=BG_CARD, color=TEXT_PRIMARY, on_click=lambda e: connect_click())
 
     startup_screen = ft.Container(
         content=ft.Column([
@@ -421,7 +457,7 @@ def main(page: ft.Page):
                 width=480,
             ),
         ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-        alignment=ft.alignment.center,
+        alignment='center',
         expand=True
     )
 
@@ -469,45 +505,6 @@ def main(page: ft.Page):
         refresh_status()
     def send_input(buttons_hex):
         dc.call("set_controller_state", {"channel": 0, "buttons": buttons_hex, "x": stick_x, "y": stick_y}, timeout=5)
-    def reset_stick():
-        nonlocal stick_x, stick_y
-        stick_x, stick_y = 0, 0
-        stick_dot.left = 58
-        stick_dot.top = 58
-        stick_label.value = "X: 0  Y: 0"
-        send_input("0x0000")
-        page.update()
-
-    def on_stick_start(e: ft.DragStartEvent):
-        pass
-    def on_stick_update(e: ft.DragUpdateEvent):
-        nonlocal stick_x, stick_y
-        # Center of container is 60,60
-        cx, cy = 60, 60
-        dx = e.local_x - cx
-        dy = e.local_y - cy
-        # Clamp to radius 50
-        dist = (dx*dx + dy*dy) ** 0.5
-        max_r = 50
-        if dist > max_r:
-            dx = dx * max_r / dist
-            dy = dy * max_r / dist
-        # Map to -128..127
-        stick_x = max(-128, min(127, int(dx * 128 / max_r)))
-        stick_y = max(-128, min(127, int(-dy * 128 / max_r)))  # Y inverted
-        stick_dot.left = cx + dx - 6
-        stick_dot.top = cy + dy - 6
-        stick_label.value = f"X: {stick_x}  Y: {stick_y}"
-        page.update()
-    def on_stick_end(e: ft.DragEndEvent):
-        # Spring back to center
-        nonlocal stick_x, stick_y
-        stick_x, stick_y = 0, 0
-        stick_dot.left = 58
-        stick_dot.top = 58
-        stick_label.value = "X: 0  Y: 0"
-        send_input("0x0000")
-        page.update()
 
     def refresh_status():
         nonlocal status_data, frame_count, last_frame, last_frame_time, fps
@@ -696,7 +693,7 @@ def main(page: ft.Page):
                 bp_list.controls.append(
                     ft.Row([
                         ft.Text(f"{idx}: {addr}", size=11, color=TEXT_PRIMARY, font_family="Consolas", expand=True),
-                        ft.ElevatedButton("×", width=28, height=28, bgcolor=STATUS_RED, color="white", on_click=lambda e, idx=idx: remove_bp(idx)),
+                        ft.Button("×", width=28, height=28, bgcolor=STATUS_RED, color="white", on_click=lambda e, idx=idx: remove_bp(idx)),
                     ], spacing=4)
                 )
             page.update()
