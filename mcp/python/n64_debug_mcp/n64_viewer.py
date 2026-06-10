@@ -1,16 +1,16 @@
-"""n64-viewer ΓÇö Enhanced live N64 emulation dashboard.
+"""n64-viewer — Enhanced live N64 emulation dashboard.
 
 Features:
 - ROM-agnostic status display (works with any ROM)
-- Frame capture preview (auto-captured frames displayed as canvas)
+- Frame capture list (text metadata — no image preview)
 - CPU registers (all 32 GPRs in a grid)
-- Scene detection (PC-range based, generic)
+- Scene detection (PC-range based, generic — only works for standard 0x80000000 map)
 - Memory hex viewer (simple hex+ASCII)
 - Breakpoint management (add/remove/list)
 - OS detection display
 - PI DMA / RSP status
-- Event log with filtering
-- Input injection with analog stick visualization
+- Event log with trace enable/disable buttons
+- Input injection with analog stick sliders and visualization
 - Auto-refresh every 250ms
 
 Usage: python n64_viewer.py [--port 9876]
@@ -41,6 +41,8 @@ BUTTON_VALS = {
 }
 
 # Generic PC-based scene detection
+# NOTE: Only works for standard memory map (0x80000000 range).
+# Rare games (Conker's BFD) use 0x10000000 range — these will show "Unknown".
 SCENE_RANGES = [
     (0x80000000, 0x80001000, "Boot Vector", "#4444AA"),
     (0x80000400, 0x80002000, "IPL3 / Boot", "#AA44AA"),
@@ -81,10 +83,9 @@ class N64Viewer:
             return
 
         self.running = True
-        self._last_positions = []
         self._frame_captures = []
-        self._os_info = None
-        self._registers = {}
+        self._stick_x = 0
+        self._stick_y = 0
         self._build_ui()
         self._poll()
 
@@ -170,6 +171,47 @@ class N64Viewer:
             tk.Button(btn_row2, text=name, command=self._inject_cmd(name),
                       font=("Consolas", 8), bg="#533483", fg="white",
                       width=4).pack(side="left", padx=1)
+
+        # Analog stick sliders
+        stick_frame = tk.Frame(inject_frame, bg="#16213e")
+        stick_frame.pack(pady=2)
+
+        # X slider
+        x_frame = tk.Frame(stick_frame, bg="#16213e")
+        x_frame.pack(fill="x")
+        tk.Label(x_frame, text="X:", font=("Consolas", 8),
+                 fg="white", bg="#16213e", width=2).pack(side="left")
+        self.stick_x_slider = tk.Scale(x_frame, from_=-128, to=127, orient="horizontal",
+                                         length=120, showvalue=False, bg="#16213e",
+                                         fg="#00ff00", troughcolor="#333",
+                                         highlightthickness=0)
+        self.stick_x_slider.set(0)
+        self.stick_x_slider.pack(side="left", padx=2)
+        self.stick_x_slider.bind("<Motion>", self._on_stick_change)
+        self.stick_x_slider.bind("<ButtonRelease-1>", self._on_stick_change)
+        self.lbl_stick_x = tk.Label(x_frame, text="0", font=("Consolas", 8),
+                                     fg="#00ff00", bg="#16213e", width=4)
+        self.lbl_stick_x.pack(side="left")
+
+        # Y slider
+        y_frame = tk.Frame(stick_frame, bg="#16213e")
+        y_frame.pack(fill="x")
+        tk.Label(y_frame, text="Y:", font=("Consolas", 8),
+                 fg="white", bg="#16213e", width=2).pack(side="left")
+        self.stick_y_slider = tk.Scale(y_frame, from_=-128, to=127, orient="horizontal",
+                                         length=120, showvalue=False, bg="#16213e",
+                                         fg="#00ff00", troughcolor="#333",
+                                         highlightthickness=0)
+        self.stick_y_slider.set(0)
+        self.stick_y_slider.pack(side="left", padx=2)
+        self.stick_y_slider.bind("<Motion>", self._on_stick_change)
+        self.stick_y_slider.bind("<ButtonRelease-1>", self._on_stick_change)
+        self.lbl_stick_y = tk.Label(y_frame, text="0", font=("Consolas", 8),
+                                     fg="#00ff00", bg="#16213e", width=4)
+        self.lbl_stick_y.pack(side="left")
+
+        tk.Button(stick_frame, text="Reset", command=self._reset_stick,
+                  font=("Consolas", 8), bg="#0f3460", fg="white").pack(pady=2)
 
         # Analog stick canvas
         self.stick_canvas = tk.Canvas(inject_frame, width=80, height=80, bg="#111",
@@ -379,10 +421,44 @@ class N64Viewer:
         parts = name.split("+")
         val = sum(BUTTON_VALS[p] for p in parts if p in BUTTON_VALS)
         def do():
+            # Use current slider values for analog stick
+            x = self._stick_x
+            y = self._stick_y
             self._safe_call("set_controller_state", {
-                "channel": 0, "buttons": val, "x": 0, "y": 0, "sticky": False,
+                "channel": 0, "buttons": val, "x": x, "y": y, "sticky": False,
             })
         return do
+
+    def _on_stick_change(self, event=None):
+        """Called when sliders move — update stored values and canvas."""
+        self._stick_x = self.stick_x_slider.get()
+        self._stick_y = self.stick_y_slider.get()
+        self.lbl_stick_x.config(text=str(self._stick_x))
+        self.lbl_stick_y.config(text=str(self._stick_y))
+        self._update_stick_canvas()
+
+    def _reset_stick(self):
+        """Center both sliders and the dot."""
+        self.stick_x_slider.set(0)
+        self.stick_y_slider.set(0)
+        self._stick_x = 0
+        self._stick_y = 0
+        self.lbl_stick_x.config(text="0")
+        self.lbl_stick_y.config(text="0")
+        self._update_stick_canvas()
+
+    def _update_stick_canvas(self):
+        """Map -128..127 to canvas coordinates (10..70)."""
+        x = self._stick_x
+        y = self._stick_y
+        # Map -128..127 to 10..70 (center at 40)
+        cx = int((x + 128) / 255 * 60 + 10)
+        cy = int((127 - y) / 255 * 60 + 10)  # Invert Y for screen coords
+        # Keep dot within bounds
+        cx = max(10, min(70, cx))
+        cy = max(10, min(70, cy))
+        # Dot is 6x6 pixels centered on cx,cy
+        self.stick_canvas.coords(self.stick_dot, cx-3, cy-3, cx+3, cy+3)
 
     def _set_capture_interval(self):
         try:
@@ -539,9 +615,8 @@ class N64Viewer:
                 self._show_capture(self._frame_captures[idx])
 
     def _show_capture(self, cap):
-        # Display a simple representation of the framebuffer
-        # Since we can't easily display raw pixels in tkinter without PIL,
-        # we show a color histogram representation
+        # Display a text representation of the framebuffer (no image preview)
+        # PIL/Pillow was used for live image rendering but removed due to pixel format mismatch
         w = cap.get('width', 0)
         h = cap.get('height', 0)
         sz = cap.get('size', 0)
@@ -580,10 +655,17 @@ class N64Viewer:
         self.lbl_scene.config(text=f"SCENE: {scene}", bg=color)
 
         # Registers
+        # NOTE: get_registers returns {"gpr": ["0x...", ...], "pc": "0x..."}
+        # "gpr" array is 32 hex strings, not a dict with f"${i}" keys
         regs = self._safe_call("get_registers")
         if regs:
+            gpr = regs.get("gpr", [])
             for i in range(32):
-                val = regs.get(f"${i}", 0)
+                val_str = gpr[i] if i < len(gpr) else "0x0"
+                try:
+                    val = int(val_str, 16) if isinstance(val_str, str) else val_str
+                except ValueError:
+                    val = 0
                 self.reg_labels[i].config(text=f"${i:02d}: 0x{val:08X}")
             self.reg_pc.config(text=f"PC: {pc}")
 
@@ -602,8 +684,8 @@ class N64Viewer:
         # Update events
         self._refresh_events()
 
-        # Analog stick
-        self.stick_canvas.coords(self.stick_dot, 37, 37, 43, 43)
+        # Analog stick canvas is updated by slider events, not polling
+        # self._update_stick_canvas() is called from _on_stick_change()
 
         self.root.after(250, self._poll)
 
