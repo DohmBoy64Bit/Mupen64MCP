@@ -14,7 +14,7 @@ Mupen64MCP lets AI assistants (Claude Desktop, Cursor, etc.) inspect and control
              │ stdio (MCP protocol)         │
 ┌────────────▼─────────────────────────────▼───────┐
 │           n64-debug-mcp  (Python)                 │
-│  FastMCP server · 38 tools                        │
+│  FastMCP server · 43 tools                        │
 │  Thin translation layer → JSON-RPC                │
 └────────────┬─────────────────────────────┬───────┘
              │ TCP 127.0.0.1:9876           │
@@ -292,6 +292,11 @@ Add to your Cursor MCP config:
 | Tool | Description |
 |------|-------------|
 | `n64_read_framebuffer` | Read current framebuffer via VI registers. Returns width/height/bpp and raw pixel data. Pixels are zero with dummy gfx plugin (requires real video plugin for rendered output). |
+| `n64_set_frame_capture_interval` | Auto-capture framebuffer every N frames (0=disable). Captures stored internally, max 100. |
+| `n64_get_frame_captures` | List auto-captured frames (frame, width, height, bpp, size). |
+| `n64_clear_frame_captures` | Clear the auto-capture buffer. |
+| `n64_wait_for_frame` | Wait until emulator reaches target frame count (with timeout). |
+| `n64_frame_count` | Get current VI frame counter. |
 
 ### Asset Discovery
 | Tool | Description |
@@ -322,7 +327,7 @@ D:\Mupen64MCP\
 │       ├── pyproject.toml           # Python package config
 │       └── n64_debug_mcp/
 │           ├── __init__.py
-│           ├── server.py            # 38 MCP tools (FastMCP)
+│           ├── server.py            # 43 MCP tools (FastMCP)
 │           ├── daemon_client.py     # TCP JSON-RPC client
 │           └── n64_viewer.py        # Live status dashboard (tkinter)
 ├── native/
@@ -374,7 +379,7 @@ D:\Mupen64MCP\
 - Config auto-set: `EnableDebugger=1`, `R4300Emulator=0` (Pure Interpreter), `Video-Rice.FrameBufferSetting=3`
 - `onDebuggerUpdate` callback propagates pause state via semaphore
 - JSON-RPC over TCP with space-tolerant parser
-- 38 MCP tools via FastMCP
+- 43 MCP tools via FastMCP
 - Python daemon client with one-connection-per-call pattern
 - Breakpoint → resume → wait loop for runtime debugging
 - ROM-read DMA tracing (PI register capture)
@@ -405,7 +410,7 @@ D:\Mupen64MCP\
   - libultra functions detected: `osCreateThread @ 0x8001C3EC`, `osStartThread @ 0x80006FD8`, `osYieldThread @ 0x800049D4`
 
 ### Comprehensive Test Results (53/53 PASS)
-All 38 MCP tools verified on Cruis'n USA in a single end-to-end test:
+All 43 MCP tools verified on Cruis'n USA in a single end-to-end test:
 
 | # | Test | Result |
 |---|------|--------|
