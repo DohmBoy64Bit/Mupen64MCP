@@ -524,8 +524,13 @@ class N64Viewer:
         # Registers
         regs = self._safe_call("get_registers")
         if regs:
+            gpr = regs.get("gpr", [])
             for i in range(32):
-                val = regs.get(f"${i}", 0)
+                val_str = gpr[i] if i < len(gpr) else "0x0"
+                try:
+                    val = int(val_str, 16) if isinstance(val_str, str) else val_str
+                except ValueError:
+                    val = 0
                 self.reg_labels[i].config(text=f"${i:02d}: 0x{val:08X}")
             self.reg_pc.config(text=f"PC: {pc}")
 
