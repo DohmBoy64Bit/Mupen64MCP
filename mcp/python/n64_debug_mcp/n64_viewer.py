@@ -496,10 +496,16 @@ class N64Viewer:
             self._safe_call("trace_callchain", {"addresses": addr, "enable": new_state})
         elif method == "trace_scheduler":
             addr = "0x80004D90"
-            self._safe_call("trace_scheduler", {"ctx_switch_addr": addr, "enable": new_state})
+            if new_state:
+                self._safe_call("trace_scheduler", {"ctx_switch_addr": addr})
+            else:
+                self._safe_call("trace_scheduler_stop")
         elif method == "track_struct":
             addr = "0x80100000"
-            self._safe_call("track_struct", {"address": addr, "size": 16, "enable": new_state})
+            if new_state:
+                self._safe_call("track_struct", {"address": addr, "size": 16})
+            else:
+                self._safe_call("track_struct_stop")
 
         if new_state:
             btn.config(text=current_text.replace("OFF", "ON"), bg="#33AA33")

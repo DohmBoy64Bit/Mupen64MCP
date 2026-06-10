@@ -971,6 +971,10 @@ std::string JsonRpcServer::handleMethod(const std::string &method,
         mSession->disableStructTracking();
         return formatResponse(id, "{\"ok\":true}");
     }
+    if (method == "clear_events") {
+        mSession->clearEvents();
+        return formatResponse(id, "{\"ok\":true}");
+    }
 
     // ── Asset scanning ─────────────────────────────────────────
     if (method == "scan_assets") {
