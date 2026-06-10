@@ -408,6 +408,10 @@ D:\Mupen64MCP\
 - **Star Fox 64** (LZ-type) — CRC `BA780BA0 0F21DB34`, 12 MB
   - Standard IPL3 boot (`0x80000400` entry)
   - libultra functions detected: `osCreateThread @ 0x8001C3EC`, `osStartThread @ 0x80006FD8`, `osYieldThread @ 0x800049D4`
+  - **Tested with real video plugin** (Rice + RSP-HLE): 21/21 viewer API calls PASS
+  - Framebuffer: 320×240 RGBA8888 with actual non-zero pixels after initial render
+  - Frame rate: ~60 FPS, 31 auto-captures in 5 seconds (10-frame interval)
+  - RSP task type: 0x02 (standard F3D ucode)
 
 ### Future Improvements
 - **OS Detector**: Currently supports libultra-based ROMs (IPL3 boot) and custom engines with libultra function signatures. Future work should add:
