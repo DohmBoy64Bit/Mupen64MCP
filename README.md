@@ -421,6 +421,7 @@ D:\Mupen64MCP\
 - **n64-viewer** (optional): standalone live status dashboard with scene detection (PC-range heuristic), CPU registers (32 GPRs in 4-column grid), memory hex viewer, OS detection display, event log with trace enable/disable buttons (ROM Reads, Callchain, Scheduler, Struct), breakpoint management, framebuffer capture list, and input injection buttons. ROM-agnostic — works with any ROM. Launched via `n64-viewer` or `start_viewer.py`.
 - **Scheduler queue-write detection**: `mSchedPrevQueueData` is now initialized with a baseline read when the trace is enabled, so the first actual write is detected as a change. `queue_addr` is optional — omit it for games with custom schedulers (e.g. Cruis'n USA) where the run queue structure is not a standard libultra `__osRunQueue`.
 - **Viewer fix**: Removed invalid `timeout=10` keyword argument from `_safe_call("detect_os")` in `n64_viewer.py`. The `_safe_call` wrapper only accepts `(method, params)`; `timeout` is handled by the daemon client's socket (already hardcoded to 10 seconds). Fixes `TypeError` when clicking the Detect OS button in the viewer.
+- **n64-viewer-flet (deprecated)**: A Steam-style Flet-based viewer (`n64_viewer_flet.py`) was created but deprecated due to ongoing Flet 0.85 API instability. Use the tkinter viewer (`n64-viewer` / `n64_viewer.py`) instead.
 
 ### Known Limitations
 - One TCP connection per request — no daemon-side blocking for `wait_for_breakpoint` (implemented as client-side poll loop)
