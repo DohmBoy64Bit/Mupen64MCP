@@ -436,6 +436,20 @@ D:\Mupen64MCP\
   - **Frame capture**: 36 captures over 3 seconds (5-frame interval)
   - Core functionality works: registers, memory, breakpoints, input injection, PI DMA, frame capture, wait_for_frame
   - **Note**: OS detector needs Intelligent Systems engine support
+- **Aero Fighters** (NALE) — CRC unknown, 8 MB
+  - **Comprehensive test**: 48/55 PASS, 7 FAIL
+  - ROM header magic: `FFFFFFFF` (not standard `80371240`) — custom header format
+  - **Standard IPL3 boot**: `0x80000400` entry, PC runs to `0x80246630` (standard memory map)
+  - **OS detector fails**: No libultra patterns detected (Video System custom engine)
+  - **Display list scanner**: No standard F3DEX2 commands at `0x802C0000` (custom graphics microcode)
+  - **Scheduler trace**: Fails (custom scheduler, not libultra `__osRunQueue`)
+  - **RSP task type**: 0x02 (standard F3D ucode)
+  - **SP DMEM**: Initialized with `0x00` (standard)
+  - **Framebuffer**: 320×240 307,200 bytes (standard dimensions)
+  - **Frame capture**: 32 captures over 3 seconds (5-frame interval)
+  - **PI DMA**: Active at dram=0x003DA818
+  - Core functionality works: registers, memory, breakpoints, input injection, PI DMA, frame capture, wait_for_frame
+  - **Note**: OS detector needs Video System engine support
 - **Star Fox 64** (LZ-type) — CRC `BA780BA0 0F21DB34`, 12 MB
   - Standard IPL3 boot (`0x80000400` entry)
   - libultra functions detected: `osCreateThread @ 0x8001C3EC`, `osStartThread @ 0x80006FD8`, `osYieldThread @ 0x800049D4`
@@ -448,10 +462,11 @@ D:\Mupen64MCP\
 - **OS Detector**: Currently supports libultra-based ROMs (IPL3 boot) and custom engines with libultra function signatures. Future work should add:
   - **Rare custom engine support** (Conker's Bad Fur Day, Banjo-Kazooie, Diddy Kong Racing): custom boot at `0x10000000`, non-standard header magic, custom scheduler
   - **Intelligent Systems engine support** (Paper Mario, Fire Emblem): custom scheduler, RSP task type 0x01, custom graphics microcode
+  - **Video System engine support** (Aero Fighters, F-1 World Grand Prix): custom scheduler, RSP task type 0x02, custom graphics microcode
   - Custom scheduler detection for non-libultra engines (e.g., Cruis'n USA's custom RTOS)
   - Additional boot pattern recognition (e.g., `0x80000180` direct entry without trampoline)
   - Function signature database expansion for games with static-linked libultra variants
-  - Detection of custom RSP ucode types beyond F3D/F3DEX2 (e.g., Boss Game Studios, Factor 5, Rare custom ucode, Intelligent Systems custom ucode)
+  - Detection of custom RSP ucode types beyond F3D/F3DEX2 (e.g., Boss Game Studios, Factor 5, Rare custom ucode, Intelligent Systems custom ucode, Video System custom ucode)
   - Support for ROMs that use custom IPL3 replacements (e.g., Nintendo 64DD IPL, iQue Player)
   - Memory map detection for ROMs using non-standard virtual address ranges (e.g., `0x10000000` for Rare games)
   - ROM header format detection for non-standard headers (e.g., `FFFFFFFF` magic in Rare/Intelligent Systems ROMs)
