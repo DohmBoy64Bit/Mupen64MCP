@@ -1,4 +1,8 @@
-"""Flet-based Steam-style N64 Live Viewer Dashboard.
+"""
+DEPRECATED — Flet-based Steam-style N64 Live Viewer Dashboard.
+
+This viewer is deprecated due to ongoing Flet 0.85 API instability.
+Use the tkinter viewer instead: `n64-viewer` (n64_viewer.py).
 
 Connects to n64-debug-daemon via JSON-RPC over TCP.
 Auto-connects on startup; shows startup screen if daemon not found.
