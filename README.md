@@ -413,6 +413,16 @@ D:\Mupen64MCP\
   - Frame rate: ~58 FPS, 30 auto-captures in 5 seconds
   - RSP task type: 0x02 (standard F3D ucode — GBI commands are standard F3DEX2, but RSP implementation is custom)
   - PI DMA active: dram=0x003BF9E0
+- **Conker's Bad Fur Day** (NFXE) — CRC unknown, 64 MB
+  - **Comprehensive test**: 45/55 PASS, 10 FAIL (expected for non-libultra custom engine)
+  - ROM header magic: `FFFFFFFF` (not standard `80371240`) — uses custom header format
+  - PC operates in `0x10000000` range (unusual memory map, not standard `0x80000000`)
+  - **OS detector fails**: No libultra patterns found (Rare custom engine, not libultra)
+  - **Display list scanner**: No standard F3DEX2 commands found (uses custom Rare graphics microcode)
+  - **Scheduler trace**: Fails (custom scheduler, not libultra `__osRunQueue`)
+  - **Framebuffer**: 292×240 280,320 bytes (non-standard dimensions)
+  - Core functionality works: registers, memory, breakpoints, input injection, frame capture, wait_for_frame
+  - **Note**: This ROM requires significant OS detector improvements for full support
 - **Star Fox 64** (LZ-type) — CRC `BA780BA0 0F21DB34`, 12 MB
   - Standard IPL3 boot (`0x80000400` entry)
   - libultra functions detected: `osCreateThread @ 0x8001C3EC`, `osStartThread @ 0x80006FD8`, `osYieldThread @ 0x800049D4`
@@ -423,11 +433,13 @@ D:\Mupen64MCP\
 
 ### Future Improvements
 - **OS Detector**: Currently supports libultra-based ROMs (IPL3 boot) and custom engines with libultra function signatures. Future work should add:
+  - **Rare custom engine support** (Conker's Bad Fur Day, Banjo-Kazooie, Diddy Kong Racing): custom boot at `0x10000000`, non-standard header magic, custom scheduler
   - Custom scheduler detection for non-libultra engines (e.g., Cruis'n USA's custom RTOS)
   - Additional boot pattern recognition (e.g., `0x80000180` direct entry without trampoline)
   - Function signature database expansion for games with static-linked libultra variants
-  - Detection of custom RSP ucode types beyond F3D/F3DEX2 (e.g., Boss Game Studios, Factor 5)
+  - Detection of custom RSP ucode types beyond F3D/F3DEX2 (e.g., Boss Game Studios, Factor 5, Rare custom ucode)
   - Support for ROMs that use custom IPL3 replacements (e.g., Nintendo 64DD IPL, iQue Player)
+  - Memory map detection for ROMs using non-standard virtual address ranges (e.g., `0x10000000` for Rare games)
 
 ### Comprehensive Test Results (53/53 PASS)
 All 43 MCP tools verified on Cruis'n USA in a single end-to-end test:
