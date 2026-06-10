@@ -380,10 +380,12 @@ std::string JsonRpcServer::handleDetectOs(int id) {
         uint8_t customPattern[] = {0x27,0xBD,0xFF,0xE0, 0xAF,0xBF,0x00,0x1C, 0xAF,0xB0,0x00,0x18};
 
         // Scan RDRAM first (where code actually runs)
+        // Start at 0x80000400 to catch IPL3-loaded code (Star Fox 64 libultra
+        // functions are at 0x80004D90-0x8001C3EC). Scan full 8MB RDRAM.
         auto scanBoth = [&](const uint8_t *pat, size_t patLen)
             -> std::pair<std::vector<uint32_t>, std::vector<uint32_t>> {
-            auto ram = scanRomPattern(mSession, 0x80001000, 0x400000, pat, patLen);
-            auto rom = scanRomPattern(mSession, 0xB0001000, 0x400000, pat, patLen);
+            auto ram = scanRomPattern(mSession, 0x80000400, 0x7FC000, pat, patLen);
+            auto rom = scanRomPattern(mSession, 0xB0000000, 0x800000, pat, patLen);
             // If RDRAM has the pattern, prefer it (it's the execution address)
             if (!ram.empty()) return {ram, {}};
             return {{}, rom};
