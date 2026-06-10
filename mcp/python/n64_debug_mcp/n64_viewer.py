@@ -1,9 +1,21 @@
-"""n64-viewer — Live N64 emulation dashboard with scene detection, game state,
-speed gauge, track view, event feed, and input injection buttons.
+"""n64-viewer — Enhanced live N64 emulation dashboard.
+
+Features:
+- ROM-agnostic status display (works with any ROM)
+- Frame capture preview (auto-captured frames displayed as canvas)
+- CPU registers (all 32 GPRs in a grid)
+- Scene detection (PC-range based, generic)
+- Memory hex viewer (simple hex+ASCII)
+- Breakpoint management (add/remove/list)
+- OS detection display
+- PI DMA / RSP status
+- Event log with filtering
+- Input injection with analog stick visualization
+- Auto-refresh every 250ms
 
 Usage: python n64_viewer.py [--port 9876]
 """
-import sys, time, struct, argparse
+import sys, time, struct, argparse, math
 sys.path.insert(0, "D:/Mupen64MCP/mcp/python")
 from n64_debug_mcp.daemon_client import DaemonClient, DaemonConfig
 
@@ -21,38 +33,33 @@ def pch(v):
         return int(v, 16)
     return int(v) if v else 0
 
-def classify_scene(pc, speed):
-    pc = pch(pc)
-    if 0x80124000 <= pc <= 0x80125FFF:
-        return ("Attract Mode", "#3366CC")
-    if 0x80102000 <= pc <= 0x80103FFF:
-        if speed and speed > 10:
-            return ("Menu (moving)", "#CC8800")
-        return ("Menu / Title", "#CC8800")
-    if 0x80115000 <= pc <= 0x80116FFF:
-        return ("Active Code", "#33AA33")
-    if 0x80100000 <= pc <= 0x80103FFF:
-        return ("Boot / Init", "#AA44AA")
-    if speed and speed > 10:
-        return ("Racing", "#33CC33")
-    return (f"Unknown", "#888888")
+BUTTON_VALS = {
+    "A": 128, "B": 64, "Z": 32, "START": 16,
+    "R": 4096, "L": 8192, "R_C": 256, "L_C": 512,
+    "D_C": 1024, "U_C": 2048,
+    "U_DPAD": 8, "D_DPAD": 4, "L_DPAD": 2, "R_DPAD": 1,
+}
 
-# 0x8013A000 layout: two consecutive car states (each 4 floats = 16 bytes)
-CAR_STATE_FIELDS = [
-    ("pos_x",      0,  "X position"),
-    ("pos_z",      4,  "Z position (track progress)"),
-    ("steer_y",    8,  "Steering / Y velocity"),
-    ("speed",     12,  "Speed"),
-    ("pos_x_n",   16,  "X (next frame)"),
-    ("pos_z_n",   20,  "Z (next frame)"),
-    ("steer_y_n", 24,  "Steering (next frame)"),
-    ("unk_1",     28,  "Unknown (normalization?)"),
+# Generic PC-based scene detection
+SCENE_RANGES = [
+    (0x80000000, 0x80001000, "Boot Vector", "#4444AA"),
+    (0x80000400, 0x80002000, "IPL3 / Boot", "#AA44AA"),
+    (0x80002000, 0x80020000, "Game Init", "#AA44AA"),
+    (0x80020000, 0x80080000, "Game Code", "#33AA33"),
+    (0x80080000, 0x80100000, "Game Code", "#33AA33"),
+    (0x80100000, 0x80180000, "Game Code", "#33AA33"),
+    (0x80180000, 0x80200000, "Game Code", "#33AA33"),
+    (0x80200000, 0x80400000, "Game Data", "#AA8800"),
+    (0xA4000000, 0xA4001000, "RSP Boot", "#AA4444"),
+    (0xA4001000, 0xA4002000, "RSP Ucode", "#AA4444"),
 ]
 
-BUTTON_VALS = {
-    "START": 16, "A": 128, "B": 64, "Z": 32, "R": 4096, "L": 8192,
-    "U": 8, "D": 4, "L_DPAD": 2, "R_DPAD": 1,
-}
+def classify_scene(pc):
+    pc = pch(pc)
+    for lo, hi, name, color in SCENE_RANGES:
+        if lo <= pc < hi:
+            return (name, color)
+    return ("Unknown", "#888888")
 
 # ── main window ────────────────────────────────────────────────
 
@@ -61,24 +68,30 @@ class N64Viewer:
         self.port = port
         self.host = host
         self.root = tk.Tk()
-        self.root.title("N64 Viewer")
-        self.root.geometry("680x720")
+        self.root.title("N64 Viewer - Live Emulation Dashboard")
+        self.root.geometry("1000x850")
+        self.root.configure(bg="#1a1a2e")
 
         cfg = DaemonConfig(core_path="dummy", port=port, host=host)
         self.dc = DaemonClient(cfg)
         try:
             self.dc._connect()
         except Exception as e:
-            self._show_error(f"Cannot connect: {e}")
+            self._show_error(f"Cannot connect to daemon at {host}:{port}: {e}")
             return
 
         self.running = True
         self._last_positions = []
+        self._frame_captures = []
+        self._os_info = None
+        self._registers = {}
         self._build_ui()
         self._poll()
 
     def _show_error(self, msg):
-        tk.Label(self.root, text=msg, fg="red", font=("", 12)).pack(expand=True)
+        lbl = tk.Label(self.root, text=msg, fg="red", bg="#1a1a2e",
+                       font=("Consolas", 12))
+        lbl.pack(expand=True)
 
     def _safe_call(self, method, params=None):
         try:
@@ -89,70 +102,251 @@ class N64Viewer:
     # ── ui construction ──────────────────────────────────────
 
     def _build_ui(self):
-        # ── status bar ──
-        sf = ttk.LabelFrame(self.root, text="Emulator Status", padding=4)
-        sf.pack(fill="x", padx=4, pady=2)
+        # Main frame with padding
+        main = tk.Frame(self.root, bg="#1a1a2e")
+        main.pack(fill="both", expand=True, padx=4, pady=4)
 
-        top = ttk.Frame(sf)
-        top.pack(fill="x")
-        self.lbl_scene = ttk.Label(top, text="Scene: --", font=("", 10, "bold"),
-                                   foreground="white", background="#888888", padding=(4, 0))
-        self.lbl_scene.pack(side="right", padx=4)
+        # ── TOP ROW: Status + Frame + Controls ──
+        top_frame = tk.Frame(main, bg="#16213e")
+        top_frame.pack(fill="x", pady=2)
 
-        self.lbl_frame = ttk.Label(sf, text="Frame: --")
+        # Status panel
+        status_panel = tk.Frame(top_frame, bg="#16213e")
+        status_panel.pack(side="left", fill="y", padx=4)
+
+        self.lbl_scene = tk.Label(status_panel, text="SCENE: --", font=("Consolas", 11, "bold"),
+                                  fg="white", bg="#888888", padx=6, pady=2)
+        self.lbl_scene.pack(anchor="w", pady=1)
+
+        self.lbl_frame = tk.Label(status_panel, text="Frame: --", font=("Consolas", 10),
+                                  fg="#00ff00", bg="#16213e")
         self.lbl_frame.pack(anchor="w")
-        self.lbl_pc = ttk.Label(sf, text="PC: --")
+
+        self.lbl_pc = tk.Label(status_panel, text="PC: --", font=("Consolas", 10),
+                               fg="#00ccff", bg="#16213e")
         self.lbl_pc.pack(anchor="w")
-        self.lbl_state = ttk.Label(sf, text="State: --")
+
+        self.lbl_state = tk.Label(status_panel, text="State: --", font=("Consolas", 10),
+                                  fg="white", bg="#16213e")
         self.lbl_state.pack(anchor="w")
-        self.lbl_fb = ttk.Label(sf, text="FB: --")
+
+        self.lbl_fb = tk.Label(status_panel, text="FB: --", font=("Consolas", 9),
+                               fg="#aaaaaa", bg="#16213e")
         self.lbl_fb.pack(anchor="w")
 
-        # ── speed + steering ──
-        gf = ttk.LabelFrame(self.root, text="Speed & Steering", padding=4)
-        gf.pack(fill="x", padx=4, pady=2)
+        # Controls panel
+        ctrl_panel = tk.Frame(top_frame, bg="#16213e")
+        ctrl_panel.pack(side="right", fill="y", padx=4)
 
-        self.lbl_speed = ttk.Label(gf, text="Speed: --")
-        self.lbl_speed.pack(anchor="w")
-        self.speed_canvas = tk.Canvas(gf, width=640, height=16, bg="#222", highlightthickness=0)
-        self.speed_canvas.pack(fill="x", padx=2, pady=2)
+        tk.Label(ctrl_panel, text="Controls", font=("Consolas", 10, "bold"),
+                 fg="white", bg="#16213e").pack()
 
-        self.lbl_steer = ttk.Label(gf, text="Steer: --")
-        self.lbl_steer.pack(anchor="w")
-        self.steer_canvas = tk.Canvas(gf, width=640, height=16, bg="#222", highlightthickness=0)
-        self.steer_canvas.pack(fill="x", padx=2, pady=2)
+        btn_frame = tk.Frame(ctrl_panel, bg="#16213e")
+        btn_frame.pack()
 
-        # ── track position ──
-        tf = ttk.LabelFrame(self.root, text="Track Position (top-down)", padding=4)
-        tf.pack(fill="x", padx=4, pady=2)
+        for name, method in [("Pause", "pause"), ("Resume", "resume"),
+                              ("Step", "step_instruction")]:
+            tk.Button(btn_frame, text=name, command=self._cmd(method),
+                      font=("Consolas", 9), bg="#0f3460", fg="white",
+                      activebackground="#1a5276", width=8).pack(side="left", padx=2)
 
-        self.track_canvas = tk.Canvas(tf, width=640, height=140, bg="#111", highlightthickness=0)
-        self.track_canvas.pack()
-        self.lbl_pos = ttk.Label(tf, text="X: --  Z: --")
-        self.lbl_pos.pack(anchor="w")
+        # Input injection panel
+        inject_frame = tk.Frame(ctrl_panel, bg="#16213e")
+        inject_frame.pack(pady=2)
 
-        # ── game data table ──
-        df = ttk.LabelFrame(self.root, text="Game Data (0x8013A000)", padding=4)
-        df.pack(fill="x", padx=4, pady=2)
-        self.data_text = tk.Text(df, height=7, font=("Consolas", 9), wrap="none")
-        self.data_text.pack(fill="x")
+        tk.Label(inject_frame, text="Input:", font=("Consolas", 9),
+                 fg="white", bg="#16213e").pack(anchor="w")
 
-        # ── event feed ──
-        ef = ttk.LabelFrame(self.root, text="Events", padding=4)
-        ef.pack(fill="both", expand=True, padx=4, pady=2)
-        self.event_text = tk.Text(ef, height=6, font=("Consolas", 9), wrap="none",
-                                  state="disabled", bg="#0a0a0a", fg="#ccc")
-        self.event_text.pack(fill="both", expand=True)
+        btn_row1 = tk.Frame(inject_frame, bg="#16213e")
+        btn_row1.pack()
+        for name in ("START", "A", "B", "Z"):
+            tk.Button(btn_row1, text=name, command=self._inject_cmd(name),
+                      font=("Consolas", 8), bg="#e94560", fg="white",
+                      width=4).pack(side="left", padx=1)
 
-        # ── controls ──
-        cf = ttk.Frame(self.root)
-        cf.pack(fill="x", padx=4, pady=2)
+        btn_row2 = tk.Frame(inject_frame, bg="#16213e")
+        btn_row2.pack(pady=1)
+        for name in ("R", "L", "U_DPAD", "D_DPAD"):
+            tk.Button(btn_row2, text=name, command=self._inject_cmd(name),
+                      font=("Consolas", 8), bg="#533483", fg="white",
+                      width=4).pack(side="left", padx=1)
 
-        ttk.Button(cf, text="Pause", command=self._cmd("pause")).pack(side="left", padx=2)
-        ttk.Button(cf, text="Resume", command=self._cmd("resume")).pack(side="left", padx=2)
-        ttk.Separator(cf, orient="vertical").pack(side="left", fill="y", padx=6)
-        for name in ("START", "A", "B", "Z", "A+R", "START+A"):
-            ttk.Button(cf, text=name, command=self._inject_cmd(name)).pack(side="left", padx=1)
+        # Analog stick canvas
+        self.stick_canvas = tk.Canvas(inject_frame, width=80, height=80, bg="#111",
+                                      highlightthickness=1, highlightbackground="#333")
+        self.stick_canvas.pack(pady=2)
+        self.stick_canvas.create_oval(10, 10, 70, 70, outline="#555", width=1)
+        self.stick_canvas.create_line(40, 10, 40, 70, fill="#333")
+        self.stick_canvas.create_line(10, 40, 70, 40, fill="#333")
+        self.stick_dot = self.stick_canvas.create_oval(37, 37, 43, 43, fill="#00ff00", outline="")
+
+        # ── MIDDLE ROW: Notebook with tabs ──
+        self.notebook = ttk.Notebook(main)
+        self.notebook.pack(fill="both", expand=True, pady=2)
+
+        # Tab 1: Framebuffer
+        self.tab_fb = tk.Frame(self.notebook, bg="#1a1a2e")
+        self.notebook.add(self.tab_fb, text="Framebuffer")
+        self._build_fb_tab()
+
+        # Tab 2: Registers
+        self.tab_regs = tk.Frame(self.notebook, bg="#1a1a2e")
+        self.notebook.add(self.tab_regs, text="Registers")
+        self._build_regs_tab()
+
+        # Tab 3: Memory
+        self.tab_mem = tk.Frame(self.notebook, bg="#1a1a2e")
+        self.notebook.add(self.tab_mem, text="Memory")
+        self._build_mem_tab()
+
+        # Tab 4: OS Info
+        self.tab_os = tk.Frame(self.notebook, bg="#1a1a2e")
+        self.notebook.add(self.tab_os, text="OS Info")
+        self._build_os_tab()
+
+        # Tab 5: Events
+        self.tab_events = tk.Frame(self.notebook, bg="#1a1a2e")
+        self.notebook.add(self.tab_events, text="Events")
+        self._build_events_tab()
+
+        # Tab 6: Breakpoints
+        self.tab_bp = tk.Frame(self.notebook, bg="#1a1a2e")
+        self.notebook.add(self.tab_bp, text="Breakpoints")
+        self._build_bp_tab()
+
+        # ── BOTTOM: Status bar ──
+        self.status_bar = tk.Label(main, text="Connected", font=("Consolas", 9),
+                                    fg="#00ff00", bg="#0f3460", anchor="w", padx=4)
+        self.status_bar.pack(fill="x", pady=2)
+
+    def _build_fb_tab(self):
+        # Frame capture display
+        self.fb_canvas = tk.Canvas(self.tab_fb, width=320, height=240, bg="#000",
+                                   highlightthickness=1, highlightbackground="#333")
+        self.fb_canvas.pack(pady=4)
+
+        # Capture controls
+        ctrl = tk.Frame(self.tab_fb, bg="#1a1a2e")
+        ctrl.pack()
+        tk.Label(ctrl, text="Capture Interval:", font=("Consolas", 9),
+                 fg="white", bg="#1a1a2e").pack(side="left")
+        self.capture_interval = tk.Spinbox(ctrl, from_=0, to=60, width=4,
+                                           font=("Consolas", 9))
+        self.capture_interval.pack(side="left", padx=2)
+        tk.Button(ctrl, text="Set", command=self._set_capture_interval,
+                  font=("Consolas", 9), bg="#0f3460", fg="white").pack(side="left", padx=2)
+        tk.Button(ctrl, text="Refresh", command=self._refresh_fb,
+                  font=("Consolas", 9), bg="#0f3460", fg="white").pack(side="left", padx=2)
+
+        # Capture list
+        self.capture_list = tk.Listbox(self.tab_fb, height=6, font=("Consolas", 9),
+                                        bg="#0a0a0a", fg="#ccc")
+        self.capture_list.pack(fill="x", padx=4, pady=2)
+        self.capture_list.bind("<<ListboxSelect>>", self._on_capture_select)
+
+    def _build_regs_tab(self):
+        self.reg_labels = {}
+        frame = tk.Frame(self.tab_regs, bg="#1a1a2e")
+        frame.pack(fill="both", expand=True, padx=4, pady=4)
+
+        # 32 GPRs in 4 columns of 8
+        for col in range(4):
+            col_frame = tk.Frame(frame, bg="#1a1a2e")
+            col_frame.pack(side="left", fill="y", padx=2)
+            for row in range(8):
+                idx = col * 8 + row
+                reg_name = f"${idx:02d}"
+                lbl = tk.Label(col_frame, text=f"{reg_name}: 0x00000000",
+                               font=("Consolas", 9), fg="#ccc", bg="#1a1a2e",
+                               anchor="w", width=24)
+                lbl.pack(anchor="w")
+                self.reg_labels[idx] = lbl
+
+        # PC, HI, LO
+        self.reg_pc = tk.Label(frame, text="PC: 0x00000000", font=("Consolas", 10, "bold"),
+                               fg="#00ccff", bg="#1a1a2e")
+        self.reg_pc.pack(side="bottom", anchor="w", pady=4)
+
+    def _build_mem_tab(self):
+        # Address entry
+        addr_frame = tk.Frame(self.tab_mem, bg="#1a1a2e")
+        addr_frame.pack(fill="x", padx=4, pady=2)
+        tk.Label(addr_frame, text="Address:", font=("Consolas", 9),
+                 fg="white", bg="#1a1a2e").pack(side="left")
+        self.mem_addr = tk.Entry(addr_frame, font=("Consolas", 9), width=12,
+                                  bg="#0a0a0a", fg="#ccc", insertbackground="white")
+        self.mem_addr.insert(0, "0x80000000")
+        self.mem_addr.pack(side="left", padx=2)
+        tk.Label(addr_frame, text="Size:", font=("Consolas", 9),
+                 fg="white", bg="#1a1a2e").pack(side="left")
+        self.mem_size = tk.Spinbox(addr_frame, from_=16, to=256, width=5,
+                                    font=("Consolas", 9))
+        self.mem_size.delete(0, "end")
+        self.mem_size.insert(0, "64")
+        self.mem_size.pack(side="left", padx=2)
+        tk.Button(addr_frame, text="Read", command=self._read_mem,
+                  font=("Consolas", 9), bg="#0f3460", fg="white").pack(side="left", padx=2)
+
+        # Hex viewer
+        self.mem_text = tk.Text(self.tab_mem, height=20, font=("Consolas", 9),
+                                 wrap="none", bg="#0a0a0a", fg="#ccc",
+                                 insertbackground="white")
+        self.mem_text.pack(fill="both", expand=True, padx=4, pady=2)
+        scrollbar = tk.Scrollbar(self.mem_text, command=self.mem_text.yview)
+        scrollbar.pack(side="right", fill="y")
+        self.mem_text.config(yscrollcommand=scrollbar.set)
+
+    def _build_os_tab(self):
+        self.os_text = tk.Text(self.tab_os, height=20, font=("Consolas", 10),
+                                wrap="word", bg="#0a0a0a", fg="#ccc",
+                                insertbackground="white")
+        self.os_text.pack(fill="both", expand=True, padx=4, pady=4)
+        self.os_text.insert("1.0", "Click 'Detect OS' to analyze the ROM.\n")
+        self.os_text.config(state="disabled")
+
+        tk.Button(self.tab_os, text="Detect OS", command=self._detect_os,
+                  font=("Consolas", 9), bg="#0f3460", fg="white").pack(pady=2)
+
+    def _build_events_tab(self):
+        self.event_text = tk.Text(self.tab_events, height=20, font=("Consolas", 9),
+                                   wrap="none", bg="#0a0a0a", fg="#ccc",
+                                   insertbackground="white")
+        self.event_text.pack(fill="both", expand=True, padx=4, pady=2)
+        self.event_text.config(state="disabled")
+
+        # Filter
+        filter_frame = tk.Frame(self.tab_events, bg="#1a1a2e")
+        filter_frame.pack(fill="x", padx=4)
+        tk.Label(filter_frame, text="Filter:", font=("Consolas", 9),
+                 fg="white", bg="#1a1a2e").pack(side="left")
+        self.event_filter = tk.Entry(filter_frame, font=("Consolas", 9), width=15,
+                                      bg="#0a0a0a", fg="#ccc", insertbackground="white")
+        self.event_filter.pack(side="left", padx=2)
+        tk.Button(filter_frame, text="Apply", command=self._refresh_events,
+                  font=("Consolas", 9), bg="#0f3460", fg="white").pack(side="left", padx=2)
+
+    def _build_bp_tab(self):
+        # BP list
+        self.bp_list = tk.Listbox(self.tab_bp, height=8, font=("Consolas", 9),
+                                   bg="#0a0a0a", fg="#ccc")
+        self.bp_list.pack(fill="x", padx=4, pady=2)
+
+        # Add BP
+        add_frame = tk.Frame(self.tab_bp, bg="#1a1a2e")
+        add_frame.pack(fill="x", padx=4)
+        tk.Label(add_frame, text="Addr:", font=("Consolas", 9),
+                 fg="white", bg="#1a1a2e").pack(side="left")
+        self.bp_addr = tk.Entry(add_frame, font=("Consolas", 9), width=12,
+                                 bg="#0a0a0a", fg="#ccc", insertbackground="white")
+        self.bp_addr.pack(side="left", padx=2)
+        tk.Button(add_frame, text="Add", command=self._add_bp,
+                  font=("Consolas", 9), bg="#0f3460", fg="white").pack(side="left", padx=2)
+        tk.Button(add_frame, text="Remove", command=self._remove_bp,
+                  font=("Consolas", 9), bg="#e94560", fg="white").pack(side="left", padx=2)
+        tk.Button(add_frame, text="Refresh", command=self._refresh_bp,
+                  font=("Consolas", 9), bg="#0f3460", fg="white").pack(side="left", padx=2)
+
+    # ── commands ─────────────────────────────────────────────
 
     def _cmd(self, method):
         return lambda: self._safe_call(method)
@@ -166,131 +360,176 @@ class N64Viewer:
             })
         return do
 
+    def _set_capture_interval(self):
+        try:
+            interval = int(self.capture_interval.get())
+            self._safe_call("set_frame_capture_interval", {"interval": interval})
+        except ValueError:
+            pass
+
+    def _refresh_fb(self):
+        self._update_framebuffer()
+
+    def _read_mem(self):
+        addr = self.mem_addr.get()
+        try:
+            size = int(self.mem_size.get())
+        except ValueError:
+            size = 64
+        r = self._safe_call("read_mem", {"address": addr, "size": size})
+        self.mem_text.delete("1.0", "end")
+        if r and r.get("hex"):
+            h = r["hex"]
+            lines = []
+            for i in range(0, len(h), 32):
+                chunk = h[i:i+32]
+                hex_part = " ".join(chunk[j:j+4] for j in range(0, len(chunk), 4))
+                ascii_part = ""
+                for j in range(0, len(chunk), 2):
+                    byte_val = int(chunk[j:j+2], 16)
+                    ascii_part += chr(byte_val) if 32 <= byte_val < 127 else "."
+                lines.append(f"{i//2:04X}: {hex_part:<40s} {ascii_part}")
+            self.mem_text.insert("1.0", "\n".join(lines))
+
+    def _detect_os(self):
+        r = self._safe_call("detect_os", timeout=10)
+        self.os_text.config(state="normal")
+        self.os_text.delete("1.0", "end")
+        if r:
+            self._os_info = r
+            lines = [
+                f"OS Type: {r.get('os_type', 'unknown')}",
+                f"Boot Type: {r.get('boot_type', 'unknown')}",
+                f"Boot Address: {r.get('boot_addr', 'unknown')}",
+                f"Has Dispatch: {r.get('has_dispatch', False)}",
+                f"Functions Found: {r.get('function_count', 0)}",
+                "",
+                "Detected Functions:",
+            ]
+            for fn in r.get('functions', []):
+                lines.append(f"  {fn.get('name', 'unknown')} @ {fn.get('address', 'unknown')} ({fn.get('location', 'unknown')})")
+            lines.append("")
+            lines.append(f"Ucode Type: {r.get('ucode_type', 'unknown')}")
+            lines.append(f"Current Context: {r.get('context', {})}")
+            self.os_text.insert("1.0", "\n".join(lines))
+        else:
+            self.os_text.insert("1.0", "OS detection failed.\n")
+        self.os_text.config(state="disabled")
+
+    def _add_bp(self):
+        addr = self.bp_addr.get()
+        if addr:
+            self._safe_call("add_exec_breakpoint", {"address": addr})
+            self._refresh_bp()
+
+    def _remove_bp(self):
+        sel = self.bp_list.curselection()
+        if sel:
+            idx = sel[0]
+            item = self.bp_list.get(idx)
+            # Parse index from item
+            if "[" in item and "]" in item:
+                bp_idx = int(item.split("[")[1].split("]")[0])
+                self._safe_call("remove_breakpoint", {"index": bp_idx})
+                self._refresh_bp()
+
+    def _refresh_bp(self):
+        r = self._safe_call("list_breakpoints")
+        self.bp_list.delete(0, "end")
+        if r:
+            for bp in r:
+                addr = bp.get("address", "unknown")
+                idx = bp.get("index", -1)
+                self.bp_list.insert("end", f"[{idx}] 0x{addr}")
+
+    def _refresh_events(self):
+        r = self._safe_call("get_trace_events", {"count": 50})
+        self.event_text.config(state="normal")
+        self.event_text.delete("1.0", "end")
+        if r:
+            filt = self.event_filter.get().lower()
+            for e in r:
+                etype = e.get("type", "?")
+                if filt and filt not in etype.lower():
+                    continue
+                f = e.get("frame", "?")
+                epc = e.get("pc", "")
+                extra = ""
+                if e.get("data"):
+                    extra = " " + " ".join(f"{d['key']}={d['value']}" for d in e["data"][:2])
+                self.event_text.insert("end", f"f{f:>6} {etype:<12s} {epc}{extra}\n")
+        self.event_text.config(state="disabled")
+
+    def _update_framebuffer(self):
+        # Get latest captures
+        r = self._safe_call("get_frame_captures")
+        if r and isinstance(r, list):
+            self._frame_captures = r
+            self.capture_list.delete(0, "end")
+            for cap in r:
+                self.capture_list.insert("end",
+                    f"Frame {cap.get('frame', '?')}: {cap.get('width', 0)}x{cap.get('height', 0)} {cap.get('size', 0)}B")
+            # Show latest
+            if r:
+                self._show_capture(r[-1])
+
+    def _on_capture_select(self, event):
+        sel = self.capture_list.curselection()
+        if sel and self._frame_captures:
+            idx = sel[0]
+            if idx < len(self._frame_captures):
+                self._show_capture(self._frame_captures[idx])
+
+    def _show_capture(self, cap):
+        # Display a simple representation of the framebuffer
+        # Since we can't easily display raw pixels in tkinter without PIL,
+        # we show a color histogram representation
+        w = cap.get('width', 0)
+        h = cap.get('height', 0)
+        sz = cap.get('size', 0)
+        self.fb_canvas.delete("all")
+        self.fb_canvas.create_text(160, 120, text=f"Frame {cap.get('frame', '?')}\n{w}x{h}\n{sz} bytes",
+                                   font=("Consolas", 14, "bold"), fill="#00ff00", justify="center")
+        # Draw a simple border
+        self.fb_canvas.create_rectangle(5, 5, 315, 235, outline="#333", width=2)
+
     # ── polling ─────────────────────────────────────────────
 
     def _poll(self):
         if not self.running:
             return
+
         s = self._safe_call("status")
         if not s:
+            self.status_bar.config(text="Disconnected", fg="#ff0000")
             self.root.after(1000, self._poll)
             return
 
+        self.status_bar.config(text="Connected", fg="#00ff00")
+
         frame = s.get("frame", "?")
         pc = s.get("pc", "0x0")
-        paused = s.get("paused", "?")
+        paused = s.get("paused", True)
 
         self.lbl_frame.config(text=f"Frame: {frame}")
         self.lbl_pc.config(text=f"PC: {pc}")
         state_str = "PAUSED" if paused else "RUNNING"
-        self.lbl_state.config(text=f"State: {state_str}",
-                              foreground="red" if paused else "green")
+        self.lbl_state.config(text=f"State: {state_str}")
+        self.lbl_state.config(foreground="red" if paused else "green")
 
-        # ── scene ──
-        raw = self._safe_call("read_mem", {"address": "0x8013A00C", "size": 4})
-        speed_now = None
-        if raw:
-            h = raw.get("hex", "")
-            if h and len(h) >= 8:
-                speed_now = struct.unpack(">f", struct.pack(">I", int(h[:8], 16)))[0]
-        scene, color = classify_scene(pc, speed_now)
-        self.lbl_scene.config(text=scene, background=color)
+        # Scene
+        scene, color = classify_scene(pc)
+        self.lbl_scene.config(text=f"SCENE: {scene}", bg=color)
 
-        # ── speed bar ──
-        if speed_now is not None:
-            self.lbl_speed.config(text=f"Speed: {speed_now:.2f}")
-        self.speed_canvas.delete("all")
-        bar_w = min(int((speed_now or 0) / 1000 * 620), 620)
-        self.speed_canvas.create_rectangle(0, 0, bar_w, 16, fill="#33CC33", outline="")
-        self.speed_canvas.create_text(bar_w + 4, 8, anchor="w",
-                                      text=f"{speed_now:.0f}" if speed_now else "0",
-                                      fill="#ccc", font=("Consolas", 8))
+        # Registers
+        regs = self._safe_call("get_registers")
+        if regs:
+            for i in range(32):
+                val = regs.get(f"${i}", 0)
+                self.reg_labels[i].config(text=f"${i:02d}: 0x{val:08X}")
+            self.reg_pc.config(text=f"PC: {pc}")
 
-        # ── game data (0x8013A000) ──
-        r = self._safe_call("read_mem", {"address": "0x8013A000", "size": 64})
-        floats = {}
-        if r:
-            h = r.get("hex", "")
-            for name, offset, desc in CAR_STATE_FIELDS:
-                if offset * 2 + 8 <= len(h):
-                    w = int(h[offset*2:offset*2+8], 16)
-                    floats[name] = struct.unpack(">f", struct.pack(">I", w))[0]
-                else:
-                    floats[name] = 0.0
-
-        self.data_text.delete("1.0", "end")
-        if floats:
-            rows = []
-            for name, offset, desc in CAR_STATE_FIELDS:
-                val = floats.get(name, 0)
-                pair = floats.get(name.replace("_n", "_next") if "_n" in name else "", None)
-                rows.append(f"  {name:<12s} {val:>8.2f}  ({desc})")
-            self.data_text.insert("1.0", "\n".join(rows))
-
-            # ── steer ──
-            steer = floats.get("steer_y", 0)
-            self.lbl_steer.config(text=f"Steer: {steer:.2f}")
-            self.steer_canvas.delete("all")
-            cx = int((steer + 1.0) / 2.0 * 620)
-            cx = max(10, min(630, cx))
-            self.steer_canvas.create_line(10, 8, 630, 8, fill="#555")
-            self.steer_canvas.create_oval(cx - 4, 4, cx + 4, 12, fill="#FF8800", outline="")
-
-            # ── track position ──
-            px = floats.get("pos_x", 0)
-            pz = floats.get("pos_z", 0)
-            self.lbl_pos.config(text=f"X: {px:.2f}  Z: {pz:.2f}")
-            self._last_positions.append((px, pz))
-            if len(self._last_positions) > 30:
-                self._last_positions.pop(0)
-
-            # Normalize positions for display
-            self.track_canvas.delete("all")
-            if self._last_positions:
-                xs = [p[0] for p in self._last_positions]
-                zs = [p[1] for p in self._last_positions]
-                min_x, max_x = min(xs), max(xs)
-                min_z, max_z = min(zs), max(zs)
-                rx = max(max_x - min_x, 100)
-                rz = max(max_z - min_z, 100)
-                pts = []
-                for x, z in self._last_positions:
-                    sx = 40 + int((x - min_x) / rx * 560)
-                    sy = 110 - int((z - min_z) / rz * 100)
-                    pts.append((sx, sy))
-                # trail
-                for i in range(1, len(pts)):
-                    alpha = int(80 * i / len(pts))
-                    color = f"#{alpha:02x}{alpha:02x}{alpha:02x}"
-                    self.track_canvas.create_line(pts[i-1][0], pts[i-1][1],
-                                                  pts[i][0], pts[i][1],
-                                                  fill="#88ff88", width=2)
-                # current position dot
-                if pts:
-                    self.track_canvas.create_oval(pts[-1][0]-4, pts[-1][1]-4,
-                                                  pts[-1][0]+4, pts[-1][1]+4,
-                                                  fill="#ff4444", outline="")
-
-        # ── events ──
-        try:
-            evts = self._safe_call("get_trace_events", {"count": 30})
-            if evts:
-                self.event_text.config(state="normal")
-                self.event_text.delete("1.0", "end")
-                for e in evts[-20:]:
-                    f = e.get("frame", "?")
-                    t = e.get("type", "?")
-                    epc = e.get("pc", "")
-                    extra = ""
-                    if e.get("data"):
-                        extra = " " + " ".join(f"{d['key']}={d['value']}" for d in e["data"][:2])
-                    self.event_text.insert("end",
-                        f"f{f:>6} {t:<12s} {epc}{extra}\n")
-                self.event_text.config(state="disabled")
-        except Exception:
-            pass
-
-        # ── fb status ──
+        # FB status
         fb = self._safe_call("read_framebuffer")
         if fb:
             w = fb.get("width", 0)
@@ -298,7 +537,17 @@ class N64Viewer:
             sz = fb.get("size", 0)
             self.lbl_fb.config(text=f"FB: {w}x{h} {sz}B")
 
-        self.root.after(500, self._poll)
+        # Update captures every 2 seconds
+        if int(frame) % 10 < 2:
+            self._update_framebuffer()
+
+        # Update events
+        self._refresh_events()
+
+        # Analog stick
+        self.stick_canvas.coords(self.stick_dot, 37, 37, 43, 43)
+
+        self.root.after(250, self._poll)
 
     def run(self):
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)

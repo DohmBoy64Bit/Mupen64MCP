@@ -409,6 +409,14 @@ D:\Mupen64MCP\
   - Standard IPL3 boot (`0x80000400` entry)
   - libultra functions detected: `osCreateThread @ 0x8001C3EC`, `osStartThread @ 0x80006FD8`, `osYieldThread @ 0x800049D4`
 
+### Future Improvements
+- **OS Detector**: Currently supports libultra-based ROMs (IPL3 boot) and custom engines with libultra function signatures. Future work should add:
+  - Custom scheduler detection for non-libultra engines (e.g., Cruis'n USA's custom RTOS)
+  - Additional boot pattern recognition (e.g., `0x80000180` direct entry without trampoline)
+  - Function signature database expansion for games with static-linked libultra variants
+  - Detection of custom RSP ucode types beyond F3D/F3DEX2 (e.g., Boss Game Studios, Factor 5)
+  - Support for ROMs that use custom IPL3 replacements (e.g., Nintendo 64DD IPL, iQue Player)
+
 ### Comprehensive Test Results (53/53 PASS)
 All 43 MCP tools verified on Cruis'n USA in a single end-to-end test:
 
