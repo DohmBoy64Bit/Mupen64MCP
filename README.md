@@ -398,7 +398,7 @@ D:\Mupen64MCP\
 ### Tested ROMs
 - **Cruis'n USA** (NCUE) — CRC `FF2F2FB4 D161149A`, 8 MB
   - Custom Midway engine (PIF jumps to `0x8011C450`, bypassing IPL3)
-  - Custom F3DEX-based RSP microcode at ROM offset `0x31000`
+  - Custom F3DEX-based RSP microcode at ROM offset `0x31000` (custom implementation, standard F3DEX2 GBI commands)
   - Boot flow: `PIF (0xA4000040)` → `0x80000000` trampoline → `0x80124C60` → `0x8011C450`
 - **Star Fox 64** (LZ-type) — CRC `BA780BA0 0F21DB34`, 12 MB
   - Standard IPL3 boot (`0x80000400` entry)
@@ -443,7 +443,7 @@ Runtime ROM/RDRAM scans via debugger memory reads identified:
 | `0x0C0000` | `63634E4E` ("ccNN") | Data segment |
 | `0x180000` | `73E5 73E5 73E5 6BE7...` repeating | **ADPCM audio data** |
 | `0x1C0000-0x7FFFFF` | Dense high-entropy data | Textures, levels, models |
-| `0x31000` | 8KB blob: 34% COP2, 19% LWC2 | **Custom F3DEX RSP microcode** |
+| `0x31000` | 8KB blob: 34% COP2, 19% LWC2 | **Custom F3DEX RSP microcode** (standard F3DEX2 GBI commands) |
 
 RDRAM after running to frame ~200:
 
@@ -451,7 +451,7 @@ RDRAM after running to frame ~200:
 |---|---|---|
 | `0x80000000` | `3C1A8012 275A4C60 03400008` → `jr 0x80124C60` | **Reset trampoline** |
 | `0x80000000-0x801FFFFF` | MIPS instructions | Loaded game code |
-| `0x802C0000-0x802FFFFF` | `E6000000`, `BA000E02`, `BF...`, `F5500000` | **Active F3DEX display lists** |
+| `0x802C0000-0x802FFFFF` | `E6000000`, `BA000E02`, `BF...`, `F5500000` | **Active F3DEX2 display lists** (standard commands) |
 | `0x80330000` | `89868685...` | **CI8 palette data** |
 | `0x80340000` | `479E9E9E...` smooth gradient | **Texture color data** |
 
