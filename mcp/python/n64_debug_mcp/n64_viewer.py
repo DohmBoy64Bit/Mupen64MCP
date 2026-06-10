@@ -492,7 +492,7 @@ class N64Viewer:
             self.mem_text.insert("1.0", "\n".join(lines))
 
     def _detect_os(self):
-        r = self._safe_call("detect_os", timeout=10)
+        r = self._safe_call("detect_os")
         self.os_text.config(state="normal")
         self.os_text.delete("1.0", "end")
         if r:
