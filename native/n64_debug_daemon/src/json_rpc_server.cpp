@@ -1,10 +1,12 @@
 #include "json_rpc_server.h"
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifdef _WIN32
@@ -671,6 +673,47 @@ std::string JsonRpcServer::handleMethod(const std::string &method,
                            ",\"size\":" + std::to_string(pixels.size()) +
                            ",\"pixels\":" + bytesToHex(pixels) + "}";
         return formatResponse(id, json);
+    }
+    if (method == "set_frame_capture_interval") {
+        uint64_t interval = extractInt(paramsJson, "interval");
+        mSession->setFrameCaptureInterval(interval);
+        return formatResponse(id, "{\"ok\":true,\"interval\":" + std::to_string(interval) + "}");
+    }
+    if (method == "get_frame_captures") {
+        auto caps = mSession->getFrameCaptures();
+        std::string json = "[";
+        for (size_t i = 0; i < caps.size(); ++i) {
+            if (i > 0) json += ",";
+            json += "{\"frame\":" + std::to_string(caps[i].frame) +
+                    ",\"width\":" + std::to_string(caps[i].width) +
+                    ",\"height\":" + std::to_string(caps[i].height) +
+                    ",\"bpp\":" + std::to_string(caps[i].bpp) +
+                    ",\"size\":" + std::to_string(caps[i].pixels.size()) + "}";
+        }
+        json += "]";
+        return formatResponse(id, json);
+    }
+    if (method == "clear_frame_captures") {
+        mSession->clearFrameCaptures();
+        return formatResponse(id, "{\"ok\":true}");
+    }
+    if (method == "wait_for_frame") {
+        uint64_t target = extractInt(paramsJson, "target");
+        uint64_t timeout = extractInt(paramsJson, "timeout_ms");
+        auto t0 = std::chrono::steady_clock::now();
+        while (mSession->frameCount() < target) {
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - t0).count();
+            if (elapsed > (int)timeout) {
+                return formatResponse(id, "{\"ok\":false,\"frame\":" + std::to_string(mSession->frameCount()) +
+                                           ",\"reason\":\"timeout\"}");
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
+        return formatResponse(id, "{\"ok\":true,\"frame\":" + std::to_string(mSession->frameCount()) + "}");
+    }
+    if (method == "frame_count") {
+        return formatResponse(id, "{\"frame_count\":" + std::to_string(mSession->frameCount()) + "}");
     }
 
     // CPU queries

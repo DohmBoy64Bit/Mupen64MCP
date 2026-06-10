@@ -1101,4 +1101,27 @@ void EmulatorSession::onDebuggerUpdate(unsigned int pc) {
 
 void EmulatorSession::onDebuggerVi() {
     mFrameCounter++;
+    uint64_t interval = mFrameCaptureInterval.load();
+    if (interval > 0 && mFrameCounter % interval == 0) {
+        uint32_t w = 0, h = 0;
+        int bpp = 0;
+        auto pixels = readFramebuffer(w, h, bpp);
+        if (!pixels.empty()) {
+            std::lock_guard<std::mutex> lock(mFrameCaptureMutex);
+            mFrameCaptures.push_back({mFrameCounter, w, h, bpp, std::move(pixels)});
+            if (mFrameCaptures.size() > 100) {
+                mFrameCaptures.erase(mFrameCaptures.begin(), mFrameCaptures.begin() + 50);
+            }
+        }
+    }
+}
+
+std::vector<EmulatorSession::FrameCapture> EmulatorSession::getFrameCaptures() const {
+    std::lock_guard<std::mutex> lock(mFrameCaptureMutex);
+    return mFrameCaptures;
+}
+
+void EmulatorSession::clearFrameCaptures() {
+    std::lock_guard<std::mutex> lock(mFrameCaptureMutex);
+    mFrameCaptures.clear();
 }

@@ -601,6 +601,46 @@ def n64_read_framebuffer() -> dict[str, Any]:
 
 
 @mcp.tool()
+def n64_set_frame_capture_interval(interval: int = 0) -> dict[str, Any]:
+    """Enable or disable automatic framebuffer capture every N frames.
+
+    interval: capture every N frames (0 = disable auto-capture)
+    """
+    return _client().call("set_frame_capture_interval", {"interval": interval})
+
+
+@mcp.tool()
+def n64_frame_count() -> dict[str, Any]:
+    """Get the current VI frame counter.
+    """
+    return _client().call("frame_count")
+
+
+@mcp.tool()
+def n64_get_frame_captures() -> dict[str, Any]:
+    """Get list of auto-captured framebuffers (frame, width, height, bpp, size).
+    """
+    return _client().call("get_frame_captures")
+
+
+@mcp.tool()
+def n64_clear_frame_captures() -> dict[str, Any]:
+    """Clear the auto-captured framebuffer list.
+    """
+    return _client().call("clear_frame_captures")
+
+
+@mcp.tool()
+def n64_wait_for_frame(target: int, timeout_ms: int = 5000) -> dict[str, Any]:
+    """Wait until the emulator reaches a specific frame count.
+
+    target:     target frame number to wait for
+    timeout_ms: max time to wait in milliseconds (default 5000)
+    """
+    return _client().call("wait_for_frame", {"target": target, "timeout_ms": timeout_ms})
+
+
+@mcp.tool()
 def n64_dl_decode(address: str, size: int = 256) -> dict[str, Any]:
     """Read a display list from memory and decode each GBI command.
 

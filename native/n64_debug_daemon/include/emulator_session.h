@@ -77,6 +77,13 @@ public:
     ViRegs readViRegs();
     std::vector<uint8_t> readFramebuffer(uint32_t &outWidth, uint32_t &outHeight, int &outBpp);
 
+    // Frame auto-capture
+    void setFrameCaptureInterval(uint64_t interval) { mFrameCaptureInterval = interval; }
+    uint64_t getFrameCaptureInterval() const { return mFrameCaptureInterval; }
+    struct FrameCapture { uint64_t frame; uint32_t width; uint32_t height; int bpp; std::vector<uint8_t> pixels; };
+    std::vector<FrameCapture> getFrameCaptures() const;
+    void clearFrameCaptures();
+
     // Safety
     void setAllowMemoryWrite(bool allow) { mAllowMemoryWrite = allow; }
     bool isMemoryWriteAllowed() const { return mAllowMemoryWrite; }
@@ -138,6 +145,11 @@ private:
     std::vector<GameStateLabel> mGameStateLabels;
     std::string mCurrentStateLabel;
     std::string mLastLog;
+
+    // Frame auto-capture
+    std::atomic<uint64_t> mFrameCaptureInterval{0};
+    mutable std::mutex mFrameCaptureMutex;
+    std::vector<FrameCapture> mFrameCaptures;
 
     // Trace flags
     bool mTraceRomRead = false;
