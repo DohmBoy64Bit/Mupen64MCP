@@ -26,6 +26,13 @@ except ImportError:
     print("tkinter not available.")
     sys.exit(1)
 
+try:
+    from PIL import Image, ImageTk
+    _PIL_AVAILABLE = True
+except ImportError:
+    _PIL_AVAILABLE = False
+    print("PIL not available. Images will be text-only.")
+
 # ── helpers ────────────────────────────────────────────────────
 
 def pch(v):
@@ -220,29 +227,62 @@ class N64Viewer:
         self.status_bar.pack(fill="x", pady=2)
 
     def _build_fb_tab(self):
-        # Frame capture display
-        self.fb_canvas = tk.Canvas(self.tab_fb, width=320, height=240, bg="#000",
+        # Main horizontal split: image on left, text on right
+        main_frame = tk.Frame(self.tab_fb, bg="#1a1a2e")
+        main_frame.pack(fill="both", expand=True, padx=4, pady=4)
+
+        # Left: Image view
+        left_frame = tk.Frame(main_frame, bg="#1a1a2e")
+        left_frame.pack(side="left", fill="both", expand=True)
+
+        # Image canvas (scaled 2x: 320x240 -> 640x480)
+        self.fb_canvas = tk.Canvas(left_frame, width=640, height=480, bg="#000",
                                    highlightthickness=1, highlightbackground="#333")
         self.fb_canvas.pack(pady=4)
 
-        # Capture controls
-        ctrl = tk.Frame(self.tab_fb, bg="#1a1a2e")
+        # Image controls
+        ctrl = tk.Frame(left_frame, bg="#1a1a2e")
         ctrl.pack()
-        tk.Label(ctrl, text="Capture Interval:", font=("Consolas", 9),
+        tk.Label(ctrl, text="View:", font=("Consolas", 9),
                  fg="white", bg="#1a1a2e").pack(side="left")
-        self.capture_interval = tk.Spinbox(ctrl, from_=0, to=60, width=4,
+        self.fb_view_mode = tk.StringVar(value="image")
+        tk.Radiobutton(ctrl, text="Image", variable=self.fb_view_mode, value="image",
+                       font=("Consolas", 9), fg="white", bg="#1a1a2e",
+                       selectcolor="#1a1a2e", command=self._refresh_fb).pack(side="left")
+        tk.Radiobutton(ctrl, text="Text", variable=self.fb_view_mode, value="text",
+                       font=("Consolas", 9), fg="white", bg="#1a1a2e",
+                       selectcolor="#1a1a2e", command=self._refresh_fb).pack(side="left")
+        tk.Button(ctrl, text="Refresh", command=self._refresh_fb,
+                  font=("Consolas", 9), bg="#0f3460", fg="white").pack(side="left", padx=4)
+
+        # Right: Text panel
+        right_frame = tk.Frame(main_frame, bg="#1a1a2e", width=300)
+        right_frame.pack(side="right", fill="y", padx=4)
+        right_frame.pack_propagate(False)
+
+        # Capture controls
+        ctrl2 = tk.Frame(right_frame, bg="#1a1a2e")
+        ctrl2.pack(fill="x", pady=2)
+        tk.Label(ctrl2, text="Capture Interval:", font=("Consolas", 9),
+                 fg="white", bg="#1a1a2e").pack(side="left")
+        self.capture_interval = tk.Spinbox(ctrl2, from_=0, to=60, width=4,
                                            font=("Consolas", 9))
         self.capture_interval.pack(side="left", padx=2)
-        tk.Button(ctrl, text="Set", command=self._set_capture_interval,
-                  font=("Consolas", 9), bg="#0f3460", fg="white").pack(side="left", padx=2)
-        tk.Button(ctrl, text="Refresh", command=self._refresh_fb,
+        tk.Button(ctrl2, text="Set", command=self._set_capture_interval,
                   font=("Consolas", 9), bg="#0f3460", fg="white").pack(side="left", padx=2)
 
         # Capture list
-        self.capture_list = tk.Listbox(self.tab_fb, height=6, font=("Consolas", 9),
+        self.capture_list = tk.Listbox(right_frame, height=10, font=("Consolas", 9),
                                         bg="#0a0a0a", fg="#ccc")
-        self.capture_list.pack(fill="x", padx=4, pady=2)
+        self.capture_list.pack(fill="both", expand=True, pady=2)
         self.capture_list.bind("<<ListboxSelect>>", self._on_capture_select)
+
+        # Frame info text
+        self.fb_info_text = tk.Text(right_frame, height=4, font=("Consolas", 9),
+                                     bg="#0a0a0a", fg="#ccc", wrap="word")
+        self.fb_info_text.pack(fill="x", pady=2)
+        self.fb_info_text.insert("1.0", "Select a frame or click Refresh to load the current framebuffer.")
+        self.fb_info_text.config(state="disabled")
 
     def _build_regs_tab(self):
         self.reg_labels = {}
@@ -469,29 +509,123 @@ class N64Viewer:
             for cap in r:
                 self.capture_list.insert("end",
                     f"Frame {cap.get('frame', '?')}: {cap.get('width', 0)}x{cap.get('height', 0)} {cap.get('size', 0)}B")
-            # Show latest
+            # Show latest with actual pixel data
             if r:
-                self._show_capture(r[-1])
+                cap = r[-1]
+                r2 = self._safe_call("read_framebuffer")
+                if r2 and r2.get("pixels"):
+                    self._show_capture(cap, r2.get("pixels"))
+                else:
+                    self._show_capture(cap)
 
     def _on_capture_select(self, event):
         sel = self.capture_list.curselection()
         if sel and self._frame_captures:
             idx = sel[0]
             if idx < len(self._frame_captures):
-                self._show_capture(self._frame_captures[idx])
+                cap = self._frame_captures[idx]
+                # Fetch full pixel data for the latest capture
+                if idx == len(self._frame_captures) - 1:
+                    r = self._safe_call("read_framebuffer")
+                    if r and r.get("pixels"):
+                        self._show_capture(cap, r.get("pixels"))
+                    else:
+                        self._show_capture(cap)
+                else:
+                    self._show_capture(cap)
 
-    def _show_capture(self, cap):
-        # Display a simple representation of the framebuffer
-        # Since we can't easily display raw pixels in tkinter without PIL,
-        # we show a color histogram representation
+    def _render_framebuffer_image(self, cap, pixels_hex):
+        """Convert hex pixel data to a tkinter PhotoImage and display it."""
+        if not _PIL_AVAILABLE:
+            return False
+        try:
+            w = cap.get('width', 0)
+            h = cap.get('height', 0)
+            bpp = cap.get('bpp', 4)
+            if w == 0 or h == 0 or not pixels_hex:
+                return False
+
+            # Convert hex to bytes
+            pixels_bytes = bytes.fromhex(pixels_hex)
+
+            # Create PIL image
+            if bpp == 4:
+                # RGBA8888
+                img = Image.frombytes('RGBA', (w, h), pixels_bytes)
+            elif bpp == 2:
+                # RGBA5551: need to convert
+                img = self._convert_rgba5551_to_rgba8888(pixels_bytes, w, h)
+            else:
+                return False
+
+            # Scale 2x for better visibility
+            img = img.resize((w * 2, h * 2), Image.NEAREST)
+
+            # Convert to tkinter format
+            photo = ImageTk.PhotoImage(img)
+
+            # Store reference to prevent garbage collection
+            self._current_fb_image = photo
+
+            # Draw on canvas
+            self.fb_canvas.delete("all")
+            self.fb_canvas.create_image(0, 0, anchor="nw", image=photo)
+            self.fb_canvas.create_rectangle(0, 0, w*2, h*2, outline="#333", width=1)
+
+            return True
+        except Exception as e:
+            print(f"Image render error: {e}")
+            return False
+
+    def _convert_rgba5551_to_rgba8888(self, data, width, height):
+        """Convert RGBA5551 (2 bytes/pixel) to RGBA8888 PIL Image."""
+        import array
+        out = array.array('B', [0] * (width * height * 4))
+        for i in range(width * height):
+            pixel = (data[i * 2] << 8) | data[i * 2 + 1]
+            r = (pixel >> 11) & 0x1F
+            g = (pixel >> 6) & 0x1F
+            b = (pixel >> 1) & 0x1F
+            a = pixel & 0x1
+            # Scale 5-bit to 8-bit
+            out[i * 4 + 0] = (r << 3) | (r >> 2)
+            out[i * 4 + 1] = (g << 3) | (g >> 2)
+            out[i * 4 + 2] = (b << 3) | (b >> 2)
+            out[i * 4 + 3] = 255 if a else 0
+        return Image.frombytes('RGBA', (width, height), out.tobytes())
+
+    def _show_capture(self, cap, pixels_hex=None):
         w = cap.get('width', 0)
         h = cap.get('height', 0)
         sz = cap.get('size', 0)
+        frame = cap.get('frame', '?')
+        bpp = cap.get('bpp', 4)
+
         self.fb_canvas.delete("all")
-        self.fb_canvas.create_text(160, 120, text=f"Frame {cap.get('frame', '?')}\n{w}x{h}\n{sz} bytes",
-                                   font=("Consolas", 14, "bold"), fill="#00ff00", justify="center")
-        # Draw a simple border
-        self.fb_canvas.create_rectangle(5, 5, 315, 235, outline="#333", width=2)
+        view_mode = self.fb_view_mode.get()
+
+        if view_mode == "image" and _PIL_AVAILABLE and pixels_hex:
+            # Try to render image
+            if self._render_framebuffer_image(cap, pixels_hex):
+                # Update info text
+                self.fb_info_text.config(state="normal")
+                self.fb_info_text.delete("1.0", "end")
+                self.fb_info_text.insert("1.0", f"Frame {frame}\n{w}x{h} {sz}B\nFormat: {'RGBA8888' if bpp == 4 else 'RGBA5551'}\nScaled: {w*2}x{h*2}")
+                self.fb_info_text.config(state="disabled")
+                return
+
+        # Fallback to text display
+        self.fb_canvas.create_text(320, 240, text=f"Frame {frame}\n{w}x{h}\n{sz} bytes\nFormat: {'RGBA8888' if bpp == 4 else 'RGBA5551'}",
+                                   font=("Consolas", 16, "bold"), fill="#00ff00", justify="center")
+        self.fb_canvas.create_rectangle(5, 5, 635, 475, outline="#333", width=2)
+
+        # Update info text
+        self.fb_info_text.config(state="normal")
+        self.fb_info_text.delete("1.0", "end")
+        if not _PIL_AVAILABLE:
+            self.fb_info_text.insert("1.0", "PIL not available. Install Pillow for image rendering.\n")
+        self.fb_info_text.insert("end", f"Frame {frame}\n{w}x{h} {sz}B\nFormat: {'RGBA8888' if bpp == 4 else 'RGBA5551'}")
+        self.fb_info_text.config(state="disabled")
 
     # ── polling ─────────────────────────────────────────────
 

@@ -471,6 +471,12 @@ D:\Mupen64MCP\
   - Memory map detection for ROMs using non-standard virtual address ranges (e.g., `0x10000000` for Rare games)
   - ROM header format detection for non-standard headers (e.g., `FFFFFFFF` magic in Rare/Intelligent Systems ROMs)
 
+- **Viewer Frame Capture History**: Currently the viewer can render live framebuffer images via `read_framebuffer`. Future work should add:
+  - `get_capture_pixels(index)` JSON-RPC method to retrieve pixel data for specific historical captures
+  - Full image rendering for all captured frames (not just the latest)
+  - Thumbnail grid view for browsing capture history
+  - Export captured frames to PNG files
+
 ### Comprehensive Test Results (53/53 PASS)
 All 43 MCP tools verified on Cruis'n USA in a single end-to-end test:
 
