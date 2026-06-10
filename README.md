@@ -167,14 +167,18 @@ n64_set_controller(channel=0, buttons="A", x=80, y=0, sticky=True) # hold A + st
 ### Launch the status dashboard (optional)
 
 ```sh
+# Via Python package entry point
 n64-viewer
+
+# Or via launcher script (includes daemon startup)
+python start_viewer.py
 ```
 
 A standalone tkinter window that connects to an already-running daemon.
-Shows live status, scene detection, speed/steering gauges, a 2D track
-position trail, labeled game state fields, a live event feed, and quick
-input injection buttons. The Game Data section is currently game-specific
-to Cruis'n USA (addresses from `0x8013A000`). Launched via `n64-viewer`.
+Shows live status, scene detection (PC-range heuristic), CPU registers (32 GPRs),
+memory hex viewer, OS detection, event log with trace enable/disable buttons,
+breakpoint management, framebuffer capture list, and input injection buttons.
+ROM-agnostic — works with any ROM. Launched via `n64-viewer` or `start_viewer.py`.
 
 ### Run the MCP server (standalone)
 
@@ -229,7 +233,7 @@ Add to your Cursor MCP config:
 }
 ```
 
-## MCP Tools (38 total)
+## MCP Tools (43 total)
 
 ### Lifecycle
 | Tool | Description |
@@ -391,7 +395,7 @@ D:\Mupen64MCP\
 - **Runtime asset discovery**: non-invasive ROM/RDRAM scan identifies regions by content fingerprint
 - **Input injection**: custom `mupen64plus-input-inject.dll` plugin replaces the dummy input plugin. Exports `SetControllerState` for the daemon to call, stores 4 channels of `BUTTONS` state, supports one-shot and sticky modes. All required Mupen64Plus input plugin exports (`SDL_KeyDown`/`SDL_KeyUp`, `GetKeys`, `InitiateControllers`, etc.)
 - **Framebuffer capture**: reads VI registers and RDRAM framebuffer via `read_framebuffer`. With dummy gfx, the RDP never processes display lists and the framebuffer stays zero. With Rice video + RSP-HLE, the framebuffer contains actual rendered pixels (daemon auto-sets `Video-Rice.FrameBufferSetting=3` for writeback).
-- **n64-viewer** (optional): standalone live status dashboard with scene detection (PC-range heuristic), labeled game state display, speed/steering gauges, 2D track position trail, event feed, and input injection buttons. Game Data section is Cruis'n USA-specific. Launched via `n64-viewer`.
+- **n64-viewer** (optional): standalone live status dashboard with scene detection (PC-range heuristic), CPU registers (32 GPRs in 4-column grid), memory hex viewer, OS detection display, event log with trace enable/disable buttons (ROM Reads, Callchain, Scheduler, Struct), breakpoint management, framebuffer capture list, and input injection buttons. ROM-agnostic — works with any ROM. Launched via `n64-viewer` or `start_viewer.py`.
 - **Scheduler queue-write detection**: `mSchedPrevQueueData` is now initialized with a baseline read when the trace is enabled, so the first actual write is detected as a change. `queue_addr` is optional — omit it for games with custom schedulers (e.g. Cruis'n USA) where the run queue structure is not a standard libultra `__osRunQueue`.
 
 ### Known Limitations
@@ -471,8 +475,9 @@ D:\Mupen64MCP\
   - Memory map detection for ROMs using non-standard virtual address ranges (e.g., `0x10000000` for Rare games)
   - ROM header format detection for non-standard headers (e.g., `FFFFFFFF` magic in Rare/Intelligent Systems ROMs)
 
-- **Viewer Frame Capture History**: Currently the viewer can render live framebuffer images via `read_framebuffer`. Future work should add:
+- **Viewer Frame Capture History**: Currently the viewer displays framebuffer metadata (frame number, dimensions, size) in a text list. Future work should add:
   - `get_capture_pixels(index)` JSON-RPC method to retrieve pixel data for specific historical captures
+  - Live framebuffer image rendering via PIL/Pillow (RGBA8888 and RGBA5551 support)
   - Full image rendering for all captured frames (not just the latest)
   - Thumbnail grid view for browsing capture history
   - Export captured frames to PNG files
@@ -502,8 +507,10 @@ All 43 MCP tools verified on Cruis'n USA in a single end-to-end test:
 | 18 | Cleanup (no stale breakpoints) | PASS |
 | 19 | Framebuffer capture (Rice + RSP-HLE) | PASS |
 | 20 | Input injection (A/B/START with sticky) | PASS |
-| 17 | ROM read tracing (PI DMA) | PASS |
-| 18 | Cleanup (no stale breakpoints) | PASS |
+| 21 | Frame capture auto-save | PASS |
+| 22 | Wait for frame | PASS |
+| 23 | Clear frame captures | PASS |
+| 24 | Frame counter | PASS |
 
 ### Asset Discovery (Cruis'n USA)
 Runtime ROM/RDRAM scans via debugger memory reads identified:
