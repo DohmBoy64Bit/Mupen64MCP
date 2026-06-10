@@ -196,7 +196,7 @@ def main(page: ft.Page):
         return ft.Column([
             ft.Text("CPU Registers", size=16, color=TEXT_PRIMARY, weight=ft.FontWeight.BOLD),
             ft.Text("32 General Purpose Registers", size=11, color=TEXT_SECONDARY),
-            ft.Container(content=reg_grid, border=ft.border.all(1, BORDER_CARD), border_radius=4, padding=4, bgcolor=BG_CARD),
+            ft.Container(content=reg_grid, border=ft.BorderSide(1, BORDER_CARD), border_radius=4, padding=4, bgcolor=BG_CARD),
         ], scroll=ft.ScrollMode.AUTO, expand=True)
 
     def build_mem_tab():
@@ -209,7 +209,7 @@ def main(page: ft.Page):
                 mem_size_field,
                 ft.ElevatedButton("Read", width=60, height=30, bgcolor=ACCENT, color="white", on_click=lambda e: read_memory()),
             ], spacing=8),
-            ft.Container(content=mem_text, border=ft.border.all(1, BORDER_CARD), border_radius=4, padding=8, bgcolor=BG_CARD, expand=True),
+            ft.Container(content=mem_text, border=ft.BorderSide(1, BORDER_CARD), border_radius=4, padding=8, bgcolor=BG_CARD, expand=True),
         ], scroll=ft.ScrollMode.AUTO, expand=True)
 
     def build_os_tab():
@@ -218,7 +218,7 @@ def main(page: ft.Page):
             ft.Row([
                 ft.ElevatedButton("🔍 Detect OS", width=120, height=35, bgcolor=ACCENT, color="white", on_click=lambda e: detect_os()),
             ], spacing=8),
-            ft.Container(content=os_text, border=ft.border.all(1, BORDER_CARD), border_radius=4, padding=8, bgcolor=BG_CARD, expand=True),
+            ft.Container(content=os_text, border=ft.BorderSide(1, BORDER_CARD), border_radius=4, padding=8, bgcolor=BG_CARD, expand=True),
         ], scroll=ft.ScrollMode.AUTO, expand=True)
 
     def build_events_tab():
@@ -229,7 +229,7 @@ def main(page: ft.Page):
                 ft.Container(width=20),
                 btn_clear_events,
             ], spacing=8, wrap=True),
-            ft.Container(content=events_list, border=ft.border.all(1, BORDER_CARD), border_radius=4, padding=8, bgcolor=BG_CARD, expand=True),
+            ft.Container(content=events_list, border=ft.BorderSide(1, BORDER_CARD), border_radius=4, padding=8, bgcolor=BG_CARD, expand=True),
         ], scroll=ft.ScrollMode.AUTO, expand=True)
 
     def build_bp_tab():
@@ -241,7 +241,7 @@ def main(page: ft.Page):
                 btn_add_bp,
                 ft.ElevatedButton("Remove All", width=90, height=30, bgcolor=STATUS_RED, color="white", on_click=lambda e: remove_all_bp()),
             ], spacing=8),
-            ft.Container(content=bp_list, border=ft.border.all(1, BORDER_CARD), border_radius=4, padding=8, bgcolor=BG_CARD, expand=True),
+            ft.Container(content=bp_list, border=ft.BorderSide(1, BORDER_CARD), border_radius=4, padding=8, bgcolor=BG_CARD, expand=True),
         ], scroll=ft.ScrollMode.AUTO, expand=True)
 
     content_area = ft.Container(content=build_fb_tab(), expand=True, padding=12)
@@ -255,11 +255,11 @@ def main(page: ft.Page):
                 ft.Text(icon, size=18),
                 ft.Text(label, size=13, color=TEXT_PRIMARY),
             ], spacing=8),
-            padding=ft.padding.only(left=16, right=16, top=10, bottom=10),
+            padding=ft.Padding(left=16, top=10, right=16, bottom=10),
             border_radius=4,
             on_click=on_click,
             bgcolor=BG_CARD if key == selected_tab else None,
-            border=ft.border.only(left=ft.BorderSide(3, ACCENT if key == selected_tab else "transparent"))
+            border=ft.Border(left=ft.BorderSide(3, ACCENT if key == selected_tab else "transparent"))
         )
         nav_refs[key] = c
         return c
@@ -278,7 +278,7 @@ def main(page: ft.Page):
         ], spacing=2),
         width=160,
         bgcolor=BG_CARD,
-        border=ft.border.only(right=ft.BorderSide(1, BORDER_CARD))
+        border=ft.Border(right=ft.BorderSide(1, BORDER_CARD))
     )
 
     # ── Top Bar ─────────────────────────────────────────────
@@ -293,8 +293,8 @@ def main(page: ft.Page):
             status_dot,
         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
         height=48,
-        padding=ft.padding.only(left=16, right=16),
-        border=ft.border.only(bottom=ft.BorderSide(1, BORDER_CARD)),
+        padding=ft.Padding(left=16, top=0, right=16, bottom=0),
+        border=ft.Border(bottom=ft.BorderSide(1, BORDER_CARD)),
         bgcolor=BG_CARD
     )
 
@@ -309,7 +309,7 @@ def main(page: ft.Page):
         padding=12,
         border_radius=8,
         bgcolor=BG_CARD,
-        border=ft.border.all(1, BORDER_CARD),
+        border=ft.BorderSide(1, BORDER_CARD),
         width=140
     )
 
@@ -322,7 +322,7 @@ def main(page: ft.Page):
         padding=12,
         border_radius=8,
         bgcolor=BG_CARD,
-        border=ft.border.all(1, BORDER_CARD),
+        border=ft.BorderSide(1, BORDER_CARD),
         expand=True
     )
 
@@ -337,8 +337,8 @@ def main(page: ft.Page):
             ft.GestureDetector(
                 content=ft.Container(
                     content=ft.Stack([
-                        ft.Container(width=120, height=120, border_radius=60, border=ft.border.all(2, BORDER_CARD), bgcolor=BG_CARD),
-                        ft.Container(width=80, height=80, border_radius=40, border=ft.border.all(1, BORDER_CARD), left=20, top=20),
+                        ft.Container(width=120, height=120, border_radius=60, border=ft.BorderSide(2, BORDER_CARD), bgcolor=BG_CARD),
+                        ft.Container(width=80, height=80, border_radius=40, border=ft.BorderSide(1, BORDER_CARD), left=20, top=20),
                         ft.Container(width=4, height=4, border_radius=2, bgcolor=TEXT_SECONDARY, left=58, top=58),
                         stick_dot,
                     ]),
@@ -357,7 +357,7 @@ def main(page: ft.Page):
         padding=12,
         border_radius=8,
         bgcolor=BG_CARD,
-        border=ft.border.all(1, BORDER_CARD),
+        border=ft.BorderSide(1, BORDER_CARD),
         width=200,
         alignment=ft.alignment.center
     )
@@ -372,8 +372,8 @@ def main(page: ft.Page):
             input_card,
         ], spacing=0),
         width=220,
-        padding=ft.padding.only(left=8, right=8, top=8, bottom=8),
-        border=ft.border.only(left=ft.BorderSide(1, BORDER_CARD)),
+        padding=ft.Padding(left=8, top=8, right=8, bottom=8),
+        border=ft.Border(left=ft.BorderSide(1, BORDER_CARD)),
         bgcolor=BG_MAIN
     )
 
@@ -417,7 +417,7 @@ def main(page: ft.Page):
                 padding=32,
                 border_radius=16,
                 bgcolor=BG_CARD,
-                border=ft.border.all(1, BORDER_CARD),
+                border=ft.BorderSide(1, BORDER_CARD),
                 width=480,
             ),
         ], alignment=ft.MainAxisAlignment.CENTER, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
@@ -432,7 +432,7 @@ def main(page: ft.Page):
         # Update sidebar highlights
         for k, ref in nav_refs.items():
             ref.bgcolor = BG_CARD if k == key else None
-            ref.border = ft.border.only(left=ft.BorderSide(3, ACCENT if k == key else "transparent"))
+            ref.border = ft.Border(left=ft.BorderSide(3, ACCENT if k == key else "transparent"))
         # Update content
         if key == "fb":
             content_area.content = build_fb_tab()
@@ -591,7 +591,7 @@ def main(page: ft.Page):
                         padding=6,
                         border_radius=4,
                         bgcolor=BG_MAIN,
-                        border=ft.border.all(1, BORDER_CARD),
+                        border=ft.BorderSide(1, BORDER_CARD),
                     )
                 )
             page.update()
