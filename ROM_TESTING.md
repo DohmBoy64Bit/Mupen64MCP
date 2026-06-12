@@ -47,27 +47,6 @@ The consistent delta from 122/122 (Cruis'n USA score): `scan_functions` returns 
 
 ## Viewer Test Results
 
-### Cruis'n USA: 45/45 PASS
-
-| Category | Count | Result |
-|----------|-------|--------|
-| Status | 3 | PASS |
-| Controls | 2 | PASS |
-| Input buttons | 4 | PASS |
-| Analog stick | 5 | PASS |
-| Framebuffer | 4 | PASS |
-| Registers | 1 | PASS |
-| Memory | 3 | PASS |
-| OS detection | 1 | PASS |
-| Trace buttons | 8 | PASS |
-| Breakpoints | 4 | PASS |
-| Address translation | 1 | PASS |
-| PI DMA | 1 | PASS |
-| RSP | 2 | PASS |
-| Wait for frame | 1 | PASS |
-| Cleanup | 1 | PASS |
-| **Total** | **45** | **45/45 PASS** |
-
 ### Star Fox 64: 44/45 PASS
 
 Same structure as above. 1 expected failure: callchain events not caught in 3-second window (attract mode doesn't hit scheduler).
