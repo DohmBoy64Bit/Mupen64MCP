@@ -26,6 +26,9 @@ dist/
 # ROMs (proprietary - do not distribute)
 roms/
 
+# Engine reverse engineering docs (keep locally, not on GitHub)
+docs/engine_reverse/
+
 # Logs
 *.log
 
