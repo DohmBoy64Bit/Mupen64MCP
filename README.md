@@ -55,11 +55,16 @@ pip install -e .
 
 ### Optional: Rice Video Plugin (for framebuffer capture)
 
+**Must be built in the MSYS2 MINGW64 shell** — not WinLibs or any other MinGW distribution. Plugins link against MSYS2's `libstdc++-6.dll` at runtime; building with a different toolchain creates ABI-incompatible DLLs that crash on load.
+
 ```sh
+# Run this from an MSYS2 MINGW64 shell, not cmd or PowerShell
 cd build/mupen64plus/mupen64plus-video-rice/projects/unix
 make all
 cp mupen64plus-video-rice.dll ../../../../plugins/
 ```
+
+All other real plugins (RSP-HLE, audio-sdl, input-sdl) must be built the same way — using `make` from the MSYS2 MINGW64 shell.
 
 ## Usage
 
@@ -73,6 +78,7 @@ native/n64_debug_daemon/build/n64-debug-daemon.exe ^
   --port 9876
 
 # With real rendering (Rice + RSP-HLE) — for framebuffer capture
+# Note: plugins must be built with MSYS2 MINGW64 toolchain (see "Rice Video Plugin" below)
 native/n64_debug_daemon/build/n64-debug-daemon.exe ^
   --core build/mupen64plus/lib/mupen64plus.dll ^
   --rom roms/myrom.z64 ^

@@ -44,7 +44,7 @@ If the path starts with `C:\msys64\...` the order is correct. If it shows `AppDa
 1. Check that MSYS2 bin is **before** WinLibs bin in PATH
 2. Verify the plugin DLLs exist at their expected paths
 3. Test with Star Fox 64 first — if it loads, PATH is correct and any remaining issue is ROM-specific
-4. If all plugins crash, the MSYS2 runtime may have been updated — rebuild plugins from the MSYS2 shell
+4. If all plugins crash, the MSYS2 runtime may have been updated — rebuild plugins from the **MSYS2 MINGW64 shell** (not WinLibs or any other MinGW distribution). Plugins must be built with the same toolchain that provides their runtime `libstdc++-6.dll`.
 5. If just the video plugin crashes with a particular ROM, it may be a microcode compatibility issue
 
 ## Known Limitations
