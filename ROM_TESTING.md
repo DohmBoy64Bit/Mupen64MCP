@@ -90,6 +90,21 @@ All 47 MCP tools tested via direct JSON-RPC on Conker's Bad Fur Day. Run 3× wit
 
 Rice + RSP-HLE achieved perfect 118/118 on all 3 runs. Dummy plugin runs have occasional timing flakes (wait_for_frame, step_instruction). Scan_functions returns 163 (below 300 threshold — Rare custom engine layout).
 
+## Full MCP Tool Test (Super Mario 64): 115-118/118 PASS
+
+All 47 MCP tools tested via direct JSON-RPC on Super Mario 64. Run 3× with dummy plugins and 3× with Rice + RSP-HLE.
+
+| Run | Plugins | Score | Note |
+|-----|---------|-------|------|
+| 1 | dummy | **118/118** | **Perfect** |
+| 2 | dummy | 115/117 | wait_for_frame timeout + load_rom flake |
+| 3 | dummy | 117/118 | wait_for_frame timeout |
+| 4 | Rice+RSP-HLE | 115/117 | wait_for_frame timeout + load_rom flake |
+| 5 | Rice+RSP-HLE | 115/117 | wait_for_frame timeout + load_rom flake |
+| 6 | Rice+RSP-HLE | 115/117 | wait_for_frame timeout + load_rom flake |
+
+Wait_for_frame timeouts (frames reach 61-93 in 10s, target +5 calculation timing). Load_rom flake occurs in 4/6 runs. Run 1 achieved a perfect 118/118.
+
 ## Exhaustive Feature Test (Cruis'n USA): 44/44 PASS
 
 | Feature | Tests | Result |
@@ -120,6 +135,10 @@ Rice + RSP-HLE achieved perfect 118/118 on all 3 runs. Dummy plugin runs have oc
 - Framebuffer: 320×240 RGBA8888 with **actual non-zero pixels** after initial render
 - Frame rate: ~60 FPS, 31 auto-captures in 5 seconds
 - RSP task type: 0x02 (standard F3D ucode)
+
+### Super Mario 64
+- Full MCP tool test: **115-118/118 PASS** (wait_for_frame timing, load_rom intermittent flake)
+- Run 1 achieved perfect 118/118
 
 ### Conker's Bad Fur Day (NFXE)
 - CRC unknown, 64 MB
