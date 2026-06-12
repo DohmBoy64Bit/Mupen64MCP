@@ -45,6 +45,21 @@ All 47 MCP tools tested via direct JSON-RPC on Star Fox 64. Run 3× with dummy p
 
 The consistent delta from 122/122 (Cruis'n USA score): `scan_functions` returns 0 because Star Fox 64's memory layout doesn't place 300+ functions in the default scan range at boot time. The other 1-off failures are timing-sensitive (step_instruction after step_frame). All core tools (breakpoints, memory, registers, tracing, input, framebuffer, RSP, PI DMA, OS detection) pass reliably.
 
+## Full MCP Tool Test (Paper Mario): 120-121/122 PASS
+
+All 47 MCP tools tested via direct JSON-RPC on Paper Mario. Run 3× with dummy plugins and 3× with Rice + RSP-HLE.
+
+| Run | Plugins | Score | Note |
+|-----|---------|-------|------|
+| 1 | dummy | 121/122 | scan_functions returns 119 (fewer funcs than Cruis'n) |
+| 2 | dummy | 120/122 | scan_functions + 1 timing flake (wait_for_frame) |
+| 3 | dummy | 121/122 | scan_functions returns 119 |
+| 4 | Rice+RSP-HLE | 121/122 | scan_functions returns 190 |
+| 5 | Rice+RSP-HLE | 121/122 | scan_functions returns 190 |
+| 6 | Rice+RSP-HLE | 121/122 | scan_functions returns 190 |
+
+Only failure: `scan_functions` returns 119-190 functions (below 300 threshold — Paper Mario's Intelligent Systems engine has a different code layout than Cruis'n USA). One timing flake on run 2 (wait_for_frame timeout). All core tools pass reliably.
+
 ## Viewer Test Results
 
 ### Star Fox 64: 44/45 PASS## Non-Viewer Test Results
@@ -100,6 +115,7 @@ The consistent delta from 122/122 (Cruis'n USA score): `scan_functions` returns 
 
 ### Paper Mario (NPEE)
 - CRC unknown, 40 MB
+- Full MCP tool test: **120-121/122 PASS** (scan_functions returns 119-190, below 300 threshold)
 - 48/55 PASS, 7 FAIL (expected — Intelligent Systems custom engine)
 - ROM header magic: `FFFFFFFF`
 - Standard IPL3 boot at `0x80000400`
