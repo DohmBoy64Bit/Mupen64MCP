@@ -83,7 +83,7 @@ def n64_stop_daemon() -> dict[str, Any]:
 
 
 @mcp.tool()
-def n64_status() -> dict[str, Any]:
+def n64_get_status() -> dict[str, Any]:
     """Return current daemon and emulator state.
 
     Includes: core_loaded, rom_loaded, running, paused, frame, pc.
@@ -214,7 +214,7 @@ def n64_translate_address_static(
 
 
 @mcp.tool()
-def n64_add_exec_breakpoint(address: str) -> dict[str, Any]:
+def n64_add_breakpoint(address: str) -> dict[str, Any]:
     """Set an execution breakpoint at a virtual address.
 
     address: hex virtual address to break on, e.g. "0x802A1234"
@@ -269,6 +269,12 @@ def n64_mark_game_state(label: str, notes: str = "") -> dict[str, Any]:
 def n64_get_trace_events(count: int = 100) -> list[dict[str, Any]]:
     """Return recent trace events (step, breakpoint hits, etc.)."""
     return _client().call("get_trace_events", {"count": count})
+
+
+@mcp.tool()
+def n64_clear_trace_events() -> dict[str, Any]:
+    """Clear the trace event buffer."""
+    return _client().call("clear_events")
 
 
 @mcp.tool()
@@ -360,7 +366,7 @@ def n64_trace_rsp_tasks(enable: bool) -> dict[str, Any]:
 
 
 @mcp.tool()
-def n64_read_sp_mem(offset: str, size: int = 64) -> dict[str, Any]:
+def n64_read_sp_memory(offset: str, size: int = 64) -> dict[str, Any]:
     """Read bytes from SP memory (DMEM or IMEM).
 
     offset: hex offset within SP memory space (0x000-0xFFF = DMEM,
@@ -372,7 +378,7 @@ def n64_read_sp_mem(offset: str, size: int = 64) -> dict[str, Any]:
 
 
 @mcp.tool()
-def n64_read_sp_regs() -> dict[str, Any]:
+def n64_read_sp_registers() -> dict[str, Any]:
     """Read SP control registers (MEM_ADDR, DRAM_ADDR, RD_LEN, WR_LEN,
     STATUS, DMA_FULL, DMA_BUSY, PC).
 
@@ -382,7 +388,7 @@ def n64_read_sp_regs() -> dict[str, Any]:
 
 
 @mcp.tool()
-def n64_rsp_health_check() -> dict[str, Any]:
+def n64_check_rsp_health() -> dict[str, Any]:
     """Check RSP health: status, ucode hash/type, task state.
 
     Returns: rsp_hle, sp_pc, sp_status, ucode_hash, ucode_type,
@@ -656,7 +662,7 @@ def n64_set_frame_capture_interval(interval: int = 0) -> dict[str, Any]:
 
 
 @mcp.tool()
-def n64_frame_count() -> dict[str, Any]:
+def n64_get_frame_count() -> dict[str, Any]:
     """Get the current VI frame counter.
     """
     return _client().call("frame_count")
@@ -687,7 +693,7 @@ def n64_wait_for_frame(target: int, timeout_ms: int = 5000) -> dict[str, Any]:
 
 
 @mcp.tool()
-def n64_dl_decode(address: str, size: int = 256) -> dict[str, Any]:
+def n64_decode_display_list(address: str, size: int = 256) -> dict[str, Any]:
     """Read a display list from memory and decode each GBI command.
 
     address: hex virtual address of the display list (e.g. "0x802C0000")

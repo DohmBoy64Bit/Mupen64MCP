@@ -586,9 +586,20 @@ std::string JsonRpcServer::handleScanAssets(int id) {
 
 // --- JSON-RPC method implementations ---
 
-std::string JsonRpcServer::handleMethod(const std::string &method,
+std::string JsonRpcServer::handleMethod(const std::string &method_,
                                          const std::string &paramsJson, int id) {
     // Session
+    // Method name aliases (backward compat — normalize to daemon-internal names)
+    std::string method = method_;
+    if (method == "read_memory") method = "read_mem";
+    else if (method == "write_memory") method = "write_mem";
+    else if (method == "trace_pi_dma") method = "enable_pi_dma_trace";
+    else if (method == "discover_assets") method = "scan_assets";
+    else if (method == "set_controller") method = "set_controller_state";
+    else if (method == "get_frame_count") method = "frame_count";
+    else if (method == "read_sp_memory") method = "read_sp_mem";
+    else if (method == "read_sp_registers") method = "read_sp_regs";
+
     if (method == "ping") {
         return formatResponse(id, "{\"pong\":true}");
     }

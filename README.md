@@ -14,7 +14,7 @@ Mupen64MCP lets AI assistants (Claude Desktop, Cursor, etc.) inspect and control
              │ stdio (MCP protocol)         │
 ┌────────────▼─────────────────────────────▼───────┐
 │           n64-debug-mcp  (Python)                 │
-│  FastMCP server · 46 tools                        │
+│  FastMCP server · 47 tools                        │
 │  Thin translation layer → JSON-RPC                │
 └────────────┬─────────────────────────────┬───────┘
              │ TCP 127.0.0.1:9876           │
@@ -266,7 +266,7 @@ Add to your Cursor MCP config:
 ### Emulation control
 | Tool | Description |
 |------|-------------|
-| `n64_status` | Core/ROM/emulator state + pc, frame, paused |
+| `n64_get_status` | Core/ROM/emulator state + pc, frame, paused |
 | `n64_load_rom` | Load a .z64 ROM and start emulation |
 | `n64_close_rom` | Close ROM and stop emulation |
 | `n64_pause` | Pause emulation |
@@ -292,7 +292,7 @@ Add to your Cursor MCP config:
 ### Breakpoints & Code Analysis
 | Tool | Description |
 |------|-------------|
-| `n64_add_exec_breakpoint` | Set execution breakpoint at virtual address |
+| `n64_add_breakpoint` | Set execution breakpoint at virtual address |
 | `n64_remove_breakpoint` | Remove breakpoint by index (uses REMOVE_ADDR + REMOVE_IDX fallback) |
 | `n64_list_breakpoints` | List all active breakpoints with address, flags, enabled |
 | `n64_scan_functions` | Scan RDRAM for ADDIU/SW-ra prologues — returns address/stack_size/approx_size |
@@ -306,11 +306,11 @@ Add to your Cursor MCP config:
 | `n64_wait_for_breakpoint` | Block until breakpoint fires |
 | `n64_export_trace` | Export trace events to JSON file |
 | `n64_track_struct` | Memory write watcher — captures addr/offset/old/new on writes |
-| `n64_dl_decode` | Display list decoder — pretty-prints F3DEX2 commands |
+| `n64_decode_display_list` | Display list decoder — pretty-prints F3DEX2 commands |
 | `n64_trace_callchain` | Multi-BP function call tracer — captures RA/A0-A3 on call |
 | `n64_trace_scheduler` | RTOS scheduler tracer — context switch + run queue (takes addresses) |
 | `n64_detect_os` | Detect OS type (libultra/likely_libultra/custom_with_libultra_functions/custom), boot flow, RSP ucode, scheduler dispatch presence, thread function addresses, active PC context |
-| `n64_clear_events` | Clear the trace event buffer |
+| `n64_clear_trace_events` | Clear the trace event buffer |
 
 ### Input Injection
 | Tool | Description |
@@ -325,7 +325,7 @@ Add to your Cursor MCP config:
 | `n64_get_frame_captures` | List auto-captured frames (frame, width, height, bpp, size). |
 | `n64_clear_frame_captures` | Clear the auto-capture buffer. |
 | `n64_wait_for_frame` | Wait until emulator reaches target frame count (with timeout). |
-| `n64_frame_count` | Get current VI frame counter. |
+| `n64_get_frame_count` | Get current VI frame counter. |
 
 ### Asset Discovery
 | Tool | Description |
@@ -344,9 +344,9 @@ Add to your Cursor MCP config:
 |------|-------------|
 | `n64_get_rsp_task` | Read current RSP task header from SP DMEM |
 | `n64_trace_rsp_tasks` | Enable/disable RSP task submission tracing |
-| `n64_read_sp_mem` | Read bytes from SP DMEM or IMEM |
-| `n64_read_sp_regs` | Read SP control registers (status, DMA, PC) |
-| `n64_rsp_health_check` | RSP health: SP registers, ucode CRC32, type inference (custom_gfx/f3dex2/audio/idle), RSP-HLE detection |
+| `n64_read_sp_memory` | Read bytes from SP DMEM or IMEM |
+| `n64_read_sp_registers` | Read SP control registers (status, DMA, PC) |
+| `n64_check_rsp_health` | RSP health: SP registers, ucode CRC32, type inference (custom_gfx/f3dex2/audio/idle), RSP-HLE detection |
 
 ## Project Structure
 
@@ -409,7 +409,7 @@ D:\Mupen64MCP\
 - Config auto-set: `EnableDebugger=1`, `R4300Emulator=0` (Pure Interpreter), `Video-Rice.FrameBufferSetting=3`
 - `onDebuggerUpdate` callback propagates pause state via semaphore
 - JSON-RPC over TCP with space-tolerant parser
-- 46 MCP tools via FastMCP
+- 47 MCP tools via FastMCP (n64_verb_noun convention)
 - Python daemon client with one-connection-per-call pattern
 - Breakpoint → resume → wait loop for runtime debugging
 - ROM-read DMA tracing (PI register capture)
