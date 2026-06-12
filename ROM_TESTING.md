@@ -75,6 +75,21 @@ All 47 MCP tools tested via direct JSON-RPC on Aero Fighters. Run 3× with dummy
 
 The wait_for_frame timeouts occur because Aero Fighters runs at a lower effective frame rate with dummy plugins (92-152 frames reached in 10s timeout — target calculated as current + 5 misses due to timing). The `load_rom` flake is intermittent (3/6 runs). Run 5 achieved a perfect 118/118 with Rice + RSP-HLE.
 
+## Full MCP Tool Test (Conker's Bad Fur Day): 116-118/118 PASS
+
+All 47 MCP tools tested via direct JSON-RPC on Conker's Bad Fur Day. Run 3× with dummy plugins and 3× with Rice + RSP-HLE.
+
+| Run | Plugins | Score | Note |
+|-----|---------|-------|------|
+| 1 | dummy | 117/118 | wait_for_frame timeout |
+| 2 | dummy | **118/118** | **Perfect** |
+| 3 | dummy | 116/118 | step_instruction timing + scan_functions 163 |
+| 4 | Rice+RSP-HLE | **118/118** | **Perfect** |
+| 5 | Rice+RSP-HLE | **118/118** | **Perfect** |
+| 6 | Rice+RSP-HLE | **118/118** | **Perfect** |
+
+Rice + RSP-HLE achieved perfect 118/118 on all 3 runs. Dummy plugin runs have occasional timing flakes (wait_for_frame, step_instruction). Scan_functions returns 163 (below 300 threshold — Rare custom engine layout).
+
 ## Exhaustive Feature Test (Cruis'n USA): 44/44 PASS
 
 | Feature | Tests | Result |
@@ -108,7 +123,8 @@ The wait_for_frame timeouts occur because Aero Fighters runs at a lower effectiv
 
 ### Conker's Bad Fur Day (NFXE)
 - CRC unknown, 64 MB
-- 45/55 PASS, 10 FAIL (expected — Rare custom engine)
+- Full MCP tool test: **116-118/118 PASS**
+- Rice + RSP-HLE: **perfect 118/118 on all 3 runs**
 - ROM header magic: `FFFFFFFF` (not standard `80371240`)
 - PC operates in `0x10000000` range
 
