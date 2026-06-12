@@ -156,6 +156,7 @@ D:\Mupen64MCP\
 
 MIT
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design details,
+See [TOOLS.md](TOOLS.md) for detailed MCP tool reference with parameters and return types,
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for design details,
 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues, and
 [ROM_TESTING.md](ROM_TESTING.md) for tested ROMs and test results.
