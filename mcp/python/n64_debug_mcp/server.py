@@ -192,6 +192,24 @@ def n64_translate_address(vaddr: str) -> dict[str, Any]:
     return _client().call("translate_address", {"vaddr": vaddr})
 
 
+@mcp.tool()
+def n64_translate_address_static(
+    file_offset: str = "",
+    kseg0: str = "",
+) -> dict[str, Any]:
+    """Translate between ROM file offset and RDRAM KSEG0/KSEG1 addresses.
+
+    Provide either file_offset or kseg0 to get the other forms.
+    Uses the standard mapping: file offset 0x1000 → RDRAM 0x80100000.
+    """
+    params = {}
+    if file_offset:
+        params["file_offset"] = file_offset
+    if kseg0:
+        params["kseg0"] = kseg0
+    return _client().call("translate_address_static", params)
+
+
 # ── breakpoints ────────────────────────────────────────────────
 
 
@@ -213,8 +231,25 @@ def n64_remove_breakpoint(index: int) -> dict[str, Any]:
 
 @mcp.tool()
 def n64_list_breakpoints() -> list[dict[str, Any]]:
-    """List all active breakpoints."""
+    """List all active breakpoints with addresses, flags, and enabled status."""
     return _client().call("list_breakpoints")
+
+
+@mcp.tool()
+def n64_scan_functions(
+    start_addr: str = "0x80100000",
+    end_addr: str = "0x80800000",
+) -> list[dict[str, Any]]:
+    """Scan RDRAM for MIPS function prologues and return all entry points.
+
+    Finds ADDIU sp,sp,-N + SW ra,N(sp) patterns and returns each function's
+    address, stack size, and approximate code size. Default scan range covers
+    the full 8MB RDRAM.
+    """
+    return _client().call("scan_functions", {
+        "start_addr": start_addr,
+        "end_addr": end_addr,
+    })
 
 
 # ── tracing ────────────────────────────────────────────────────
@@ -344,6 +379,17 @@ def n64_read_sp_regs() -> dict[str, Any]:
     Useful for checking RSP/DMA status and the current SP program counter.
     """
     return _client().call("read_sp_regs")
+
+
+@mcp.tool()
+def n64_rsp_health_check() -> dict[str, Any]:
+    """Check RSP health: status, ucode hash/type, task state.
+
+    Returns: rsp_hle, sp_pc, sp_status, ucode_hash, ucode_type,
+             task_active, task_type. Use to diagnose RSP-HLE conflicts
+             and determine if the loaded ucode is GFX or audio.
+    """
+    return _client().call("rsp_health_check")
 
 
 # ── display list decoder ─────────────────────────────────────

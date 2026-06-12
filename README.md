@@ -14,7 +14,7 @@ Mupen64MCP lets AI assistants (Claude Desktop, Cursor, etc.) inspect and control
              │ stdio (MCP protocol)         │
 ┌────────────▼─────────────────────────────▼───────┐
 │           n64-debug-mcp  (Python)                 │
-│  FastMCP server · 43 tools                        │
+│  FastMCP server · 46 tools                        │
 │  Thin translation layer → JSON-RPC                │
 └────────────┬─────────────────────────────┬───────┘
              │ TCP 127.0.0.1:9876           │
@@ -154,7 +154,7 @@ native/n64_debug_daemon/build/n64-debug-daemon.exe ^
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
-| `--core <path>` | Path to `mupen64plus.dll` | `libmupen64plus.dll` | `--core build/mupen64plus/lib/mupen64plus.dll` |
+| `--core <path>` | Path to `mupen64plus.dll` | *(required)* | `--core build/mupen64plus/lib/mupen64plus.dll` |
 | `--rom <path>` | ROM file to load | *(none)* | `--rom roms/starfox64.z64` |
 | `--gfx <path>` | Video plugin DLL | `dummy` | `--gfx plugins/mupen64plus-video-rice.dll` |
 | `--audio <path>` | Audio plugin DLL | `dummy` | `--audio dummy` |
@@ -255,7 +255,7 @@ Add to your Cursor MCP config:
 }
 ```
 
-## MCP Tools (43 total)
+## MCP Tools (46 total)
 
 ### Lifecycle
 | Tool | Description |
@@ -286,14 +286,16 @@ Add to your Cursor MCP config:
 | `n64_read_memory` | Read bytes from N64 address space |
 | `n64_write_memory` | Write bytes (disabled by default) |
 | `n64_dump_rdram` | Dump RDRAM from 0x80000000 |
-| `n64_translate_address` | Virtual → physical address translation |
+| `n64_translate_address` | Virtual → physical address translation via core TLB |
+| `n64_translate_address_static` | Static address translation: file offset ↔ KSEG0 ↔ KSEG1 |
 
-### Breakpoints
+### Breakpoints & Code Analysis
 | Tool | Description |
 |------|-------------|
 | `n64_add_exec_breakpoint` | Set execution breakpoint at virtual address |
-| `n64_remove_breakpoint` | Remove breakpoint by index |
-| `n64_list_breakpoints` | List all active breakpoints |
+| `n64_remove_breakpoint` | Remove breakpoint by index (uses REMOVE_ADDR + REMOVE_IDX fallback) |
+| `n64_list_breakpoints` | List all active breakpoints with address, flags, enabled |
+| `n64_scan_functions` | Scan RDRAM for ADDIU/SW-ra prologues — returns address/stack_size/approx_size |
 
 ### Tracing
 | Tool | Description |
@@ -344,6 +346,7 @@ Add to your Cursor MCP config:
 | `n64_trace_rsp_tasks` | Enable/disable RSP task submission tracing |
 | `n64_read_sp_mem` | Read bytes from SP DMEM or IMEM |
 | `n64_read_sp_regs` | Read SP control registers (status, DMA, PC) |
+| `n64_rsp_health_check` | RSP health: SP registers, ucode CRC32, type inference (custom_gfx/f3dex2/audio/idle), RSP-HLE detection |
 
 ## Project Structure
 
@@ -354,7 +357,7 @@ D:\Mupen64MCP\
 │       ├── pyproject.toml           # Python package config
 │       └── n64_debug_mcp/
 │           ├── __init__.py
-│           ├── server.py            # 43 MCP tools (FastMCP)
+│           ├── server.py            # 46 MCP tools (FastMCP)
 │           ├── daemon_client.py     # TCP JSON-RPC client
 │           └── n64_viewer.py        # Live status dashboard (tkinter)
 ├── native/
@@ -406,7 +409,7 @@ D:\Mupen64MCP\
 - Config auto-set: `EnableDebugger=1`, `R4300Emulator=0` (Pure Interpreter), `Video-Rice.FrameBufferSetting=3`
 - `onDebuggerUpdate` callback propagates pause state via semaphore
 - JSON-RPC over TCP with space-tolerant parser
-- 43 MCP tools via FastMCP
+- 46 MCP tools via FastMCP
 - Python daemon client with one-connection-per-call pattern
 - Breakpoint → resume → wait loop for runtime debugging
 - ROM-read DMA tracing (PI register capture)
@@ -422,13 +425,21 @@ D:\Mupen64MCP\
 - **Scheduler queue-write detection**: `mSchedPrevQueueData` is now initialized with a baseline read when the trace is enabled, so the first actual write is detected as a change. `queue_addr` is optional — omit it for games with custom schedulers (e.g. Cruis'n USA) where the run queue structure is not a standard libultra `__osRunQueue`.
 - **Viewer fix**: Removed invalid `timeout=10` keyword argument from `_safe_call("detect_os")` in `n64_viewer.py`. The `_safe_call` wrapper only accepts `(method, params)`; `timeout` is handled by the daemon client's socket (already hardcoded to 10 seconds). Fixes `TypeError` when clicking the Detect OS button in the viewer.
 - **n64-viewer-flet (deprecated)**: A Steam-style Flet-based viewer (`n64_viewer_flet.py`) was created but deprecated due to ongoing Flet 0.85 API instability. Use the tkinter viewer (`n64-viewer` / `n64_viewer.py`) instead.
+- **Breakpoint management fix**: `mOwnedBps` tracking vector replaces fragile index-based tracking. `removeBreakpoint` uses `REMOVE_ADDR` with `REMOVE_IDX` fallback. `listBreakpoints` returns accurate address/flags/enabled for every BP.
+- **`translate_address_static` tool**: Static address conversion between file offset / KSEG0 / KSEG1 using standard N64 mapping (`RDRAM = 0x80100000 + (file_offset - 0x1000)`). Works on any known offset, no emulator state required.
+- **`scan_functions` tool**: Scans RDRAM for MIPS function prologues (`ADDIU sp,sp,-N` + `SW ra,N(sp)`) within configurable range. Returns address, stack_size, approx_size. Confirmed: 646 functions in Cruis'n USA (0x80100050–0x8017EF94).
+- **`rsp_health_check` tool**: Reads SP registers, CRC32 of IMEM ucode, infers ucode type (custom_gfx/f3dex2/f3dex/audio/idle_or_hle), detects RSP-HLE via SP_PC=0. Cruis'n USA: `idle_or_hle`, Star Fox 64: `audio`.
+- **Daemon BP fix**: `add_breakpoint_struct` core API returns the BP index (>=0 on success, not 0). Daemon now checks `r >= 0` instead of `r == 0`, fixing the inability to add more than 1 breakpoint.
 
 ### Known Limitations
 - One TCP connection per request — no daemon-side blocking for `wait_for_breakpoint` (implemented as client-side poll loop)
 - Only interpreter mode produces reliable debugger callbacks
 - Frame counter requires VI interrupts (dummy gfx plugins may not increment it)
 - Input injection requires passing `--input path/to/mupen64plus-input-inject.dll` at daemon startup
+- `--core <path>` is required — the daemon default (`libmupen64plus.dll`) does not match the actual DLL name (`mupen64plus.dll`)
+- Must add MSYS2 MINGW64 `bin` and core `lib` to PATH before starting daemon; `Start-Process` in PowerShell does not inherit shell PATH
 - **Rice video plugin framebuffer writeback compatibility**: Works with Star Fox 64 (standard F3D ucode) but produces black framebuffer with Cruis'n USA (custom F3DEX-based microcode). This is a plugin limitation, not a daemon bug — the framebuffer dimensions and format are correctly reported. For pixel-accurate capture on all ROMs, a different video plugin or renderer may be needed.
+- **Function scanner requires emulator in KSEG0 range**: `scan_functions` returns 0 results if the emulator PC is still in SP boot (0xA4000000). Resume and re-pause before scanning.
 
 ### Tested ROMs
 - **Cruis'n USA** (NCUE) — CRC `FF2F2FB4 D161149A`, 8 MB
@@ -583,6 +594,18 @@ Direct daemon RPC testing without viewer abstraction:
 | 18 | ROM read tracing | PASS | |
 | 19 | Cleanup | PASS | |
 | | **Total** | **45/46 PASS** | 1 expected failure (DL timing) |
+
+#### Exhaustive Feature Test: 44/44 PASS
+New daemon features tested via direct JSON-RPC on Cruis'n USA:
+
+| # | Feature | Tests | Result |
+|---|---------|-------|--------|
+| 1 | Breakpoint management (add, list with address/flags/enabled, remove, cycle) | 15 | PASS |
+| 2 | Address translation (file→kseg0, file→kseg1, kseg0→file, IPL3, no-param error) | 7 | PASS |
+| 3 | Function scanner (range scan, full scan >500 funcs, field validation) | 6 | PASS |
+| 4 | RSP health check (sp_pc, sp_status, ucode_hash, ucode_type, task_active, rsp_hle) | 6 | PASS |
+| 5 | Regression checks (status, registers, memory, SP regs, PI DMA) | 10 | PASS |
+| | **Total** | **44** | **44/44 PASS** |
 
 ### Asset Discovery (Cruis'n USA)
 Runtime ROM/RDRAM scans via debugger memory reads identified:

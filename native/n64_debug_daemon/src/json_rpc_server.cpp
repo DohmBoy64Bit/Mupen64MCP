@@ -771,9 +771,70 @@ std::string JsonRpcServer::handleMethod(const std::string &method,
     if (method == "translate_address") {
         uint32_t vaddr = extractHex(paramsJson, "vaddr");
         uint32_t paddr = mSession->translateAddress(vaddr);
-        char buf[64];
+        char buf[128];
         snprintf(buf, sizeof(buf), "{\"vaddr\":%s,\"paddr\":%s}",
                  hexStr(vaddr).c_str(), hexStr(paddr).c_str());
+        return formatResponse(id, buf);
+    }
+
+    // Static address translation (file offset <-> KSEG0/KSEG1/RDRAM)
+    if (method == "translate_address_static") {
+        uint32_t fileOffset = extractHex(paramsJson, "file_offset");
+        if (fileOffset != 0) {
+            // Translate from file offset
+            uint32_t kseg0 = EmulatorSession::fileOffsetToRdram(fileOffset);
+            uint32_t kseg1 = EmulatorSession::rdramToKseg1(kseg0);
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                     "{\"file_offset\":%s,\"kseg0\":%s,\"kseg1\":%s}",
+                     hexStr(fileOffset).c_str(), hexStr(kseg0).c_str(), hexStr(kseg1).c_str());
+            return formatResponse(id, buf);
+        }
+        uint32_t kseg0 = extractHex(paramsJson, "kseg0");
+        if (kseg0 != 0) {
+            uint32_t fileOff = EmulatorSession::rdramToFileOffset(kseg0);
+            uint32_t kseg1 = EmulatorSession::rdramToKseg1(kseg0);
+            char buf[256];
+            snprintf(buf, sizeof(buf),
+                     "{\"file_offset\":%s,\"kseg0\":%s,\"kseg1\":%s}",
+                     hexStr(fileOff).c_str(), hexStr(kseg0).c_str(), hexStr(kseg1).c_str());
+            return formatResponse(id, buf);
+        }
+        return formatError(id, -32602, "Provide either file_offset or kseg0");
+    }
+
+    // Function scanner
+    if (method == "scan_functions") {
+        uint32_t start = extractHex(paramsJson, "start_addr");
+        uint32_t end = extractHex(paramsJson, "end_addr");
+        if (start == 0) start = 0x80100000;
+        if (end == 0) end = 0x80800000;
+        auto funcs = mSession->scanFunctions(start, end);
+        std::string out = "[";
+        for (size_t i = 0; i < funcs.size(); i++) {
+            if (i > 0) out += ",";
+            char buf[128];
+            snprintf(buf, sizeof(buf),
+                     "{\"address\":%s,\"stack_size\":%u,\"approx_size\":%u}",
+                     hexStr(funcs[i].address).c_str(), funcs[i].stackSize, funcs[i].approxSize);
+            out += buf;
+        }
+        out += "]";
+        return formatResponse(id, out);
+    }
+
+    // RSP health check
+    if (method == "rsp_health_check") {
+        auto h = mSession->checkRspHealth();
+        char buf[1024];
+        snprintf(buf, sizeof(buf),
+                 "{\"rsp_hle\":%s,\"sp_pc\":%s,\"sp_status\":%s,"
+                 "\"sp_dma_busy\":%s,\"ucode_hash\":\"0x%08X\","
+                 "\"ucode_type\":\"%s\",\"task_active\":%s,\"task_type\":%u}",
+                 h.rspHle ? "true" : "false",
+                 hexStr(h.spPc).c_str(), hexStr(h.spStatus).c_str(),
+                 hexStr(h.spDmaBusy).c_str(), h.ucodeHash,
+                 h.ucodeType.c_str(), h.taskActive ? "true" : "false", h.taskType);
         return formatResponse(id, buf);
     }
 
@@ -807,7 +868,11 @@ std::string JsonRpcServer::handleMethod(const std::string &method,
         std::string out = "[";
         for (size_t i = 0; i < bps.size(); i++) {
             if (i > 0) out += ",";
-            out += "{\"index\":" + std::to_string(bps[i].index) + "}";
+            out += "{\"index\":" + std::to_string(bps[i].index) +
+                   ",\"address\":" + hexStr(bps[i].address) +
+                   ",\"end_address\":" + hexStr(bps[i].endAddress) +
+                   ",\"flags\":" + std::to_string(bps[i].flags) +
+                   ",\"enabled\":" + (bps[i].enabled ? "true" : "false") + "}";
         }
         out += "]";
         return formatResponse(id, out);

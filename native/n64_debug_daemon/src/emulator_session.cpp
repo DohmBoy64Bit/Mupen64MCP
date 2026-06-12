@@ -599,12 +599,18 @@ int EmulatorSession::addExecBreakpoint(uint32_t vaddr) {
     bp.endaddr = vaddr;
     bp.flags = M64P_BKP_FLAG_EXEC | M64P_BKP_FLAG_ENABLED;
     int r = mAPI.DebugBreakpointCommand(M64P_BKP_CMD_ADD_STRUCT, 0, &bp);
-    if (r == 0) {
+    if (r >= 0) {
         int index = mAPI.DebugBreakpointLookup(vaddr, 4, M64P_BKP_FLAG_EXEC | M64P_BKP_FLAG_ENABLED);
         int numBps = mAPI.DebugGetState(M64P_DBG_NUM_BREAKPOINTS);
-        if (index >= 0) return index;
-        if (numBps > 0) return numBps - 1;
-        return 0;
+        int bpIndex = (index >= 0) ? index : ((numBps > 0) ? numBps - 1 : 0);
+        // Track this BP
+        TrackedBp tb;
+        tb.index = bpIndex;
+        tb.address = vaddr;
+        tb.endAddress = vaddr;
+        tb.flags = bp.flags;
+        mOwnedBps.push_back(tb);
+        return bpIndex;
     }
     return -1;
 }
@@ -617,17 +623,45 @@ int EmulatorSession::addMemoryBreakpoint(uint32_t vaddr, uint32_t size, unsigned
     bp.endaddr = paddr + size - 1;
     bp.flags = flags | M64P_BKP_FLAG_ENABLED;
     int r = mAPI.DebugBreakpointCommand(M64P_BKP_CMD_ADD_STRUCT, 0, &bp);
-    if (r == 0) {
+    if (r >= 0) {
         int index = mAPI.DebugBreakpointLookup(paddr, size, flags | M64P_BKP_FLAG_ENABLED);
-        if (index >= 0) return index;
         int numBps = mAPI.DebugGetState(M64P_DBG_NUM_BREAKPOINTS);
-        return (numBps > 0) ? numBps - 1 : 0;
+        int bpIndex = (index >= 0) ? index : ((numBps > 0) ? numBps - 1 : 0);
+        TrackedBp tb;
+        tb.index = bpIndex;
+        tb.address = vaddr;
+        tb.endAddress = paddr + size - 1;
+        tb.flags = bp.flags;
+        mOwnedBps.push_back(tb);
+        return bpIndex;
     }
     return -1;
 }
 
 bool EmulatorSession::removeBreakpoint(int index) {
     if (!isDebuggerAvailable()) return false;
+    // Find the tracked BP by index, prefer REMOVE_ADDR for reliability
+    for (auto it = mOwnedBps.begin(); it != mOwnedBps.end(); ++it) {
+        if (it->index == index) {
+            m64p_breakpoint bp;
+            bp.address = it->address;
+            bp.endaddr = it->endAddress;
+            bp.flags = it->flags;
+            int r = mAPI.DebugBreakpointCommand(M64P_BKP_CMD_REMOVE_ADDR, 0, &bp);
+            if (r == 0) {
+                mOwnedBps.erase(it);
+                return true;
+            }
+            // Fallback to REMOVE_IDX if address-based fails
+            r = mAPI.DebugBreakpointCommand(M64P_BKP_CMD_REMOVE_IDX, index, nullptr);
+            if (r == 0) {
+                mOwnedBps.erase(it);
+                return true;
+            }
+            return false;
+        }
+    }
+    // Not found in our list — try REMOVE_IDX anyway
     int r = mAPI.DebugBreakpointCommand(M64P_BKP_CMD_REMOVE_IDX, index, nullptr);
     return r == 0;
 }
@@ -635,14 +669,158 @@ bool EmulatorSession::removeBreakpoint(int index) {
 std::vector<BreakpointInfo> EmulatorSession::listBreakpoints() {
     std::vector<BreakpointInfo> result;
     if (!isDebuggerAvailable()) return result;
-    int numBps = mAPI.DebugGetState(M64P_DBG_NUM_BREAKPOINTS);
-    for (int i = 0; i < numBps; i++) {
+    // Return from our own tracked BP list — accurate and reliable
+    for (auto &tb : mOwnedBps) {
         BreakpointInfo info;
-        info.index = i;
-        info.enabled = true;
+        info.index = tb.index;
+        info.address = tb.address;
+        info.endAddress = tb.endAddress;
+        info.flags = tb.flags;
+        info.enabled = (tb.flags & M64P_BKP_FLAG_ENABLED) != 0;
         result.push_back(info);
     }
     return result;
+}
+
+// --- Address translation helpers ---
+// Boot code: file offset 0x1000 → RDRAM KSEG0 0x80100000
+// File offsets 0x0000-0x0FFF are IPL3 → KSEG0 0x80000000
+uint32_t EmulatorSession::fileOffsetToRdram(uint32_t fileOffset) {
+    if (fileOffset < 0x1000)
+        return 0x80000000 + fileOffset;  // IPL3 ROM mirror
+    return 0x80100000 + (fileOffset - 0x1000);
+}
+
+uint32_t EmulatorSession::rdramToFileOffset(uint32_t rdramAddr) {
+    if (rdramAddr >= 0x80000000 && rdramAddr < 0x80001000)
+        return rdramAddr - 0x80000000;  // IPL3 area
+    if (rdramAddr >= 0x80100000)
+        return (rdramAddr - 0x80100000) + 0x1000;
+    return 0;  // Can't map — likely BSS/data, not in ROM
+}
+
+uint32_t EmulatorSession::rdramToKseg1(uint32_t rdramAddr) {
+    return rdramAddr + 0x20000000;
+}
+
+// --- Function scanner ---
+std::vector<EmulatorSession::FuncEntry> EmulatorSession::scanFunctions(uint32_t startAddr, uint32_t endAddr) {
+    std::vector<FuncEntry> result;
+    if (!isDebuggerAvailable() || !mEmuRunning) return result;
+    // Scan for MIPS prologues: ADDIU sp,sp,-N (0x27BDXXXX with N < 512)
+    const uint32_t step = 4;
+    for (uint32_t addr = startAddr; addr < endAddr; addr += step) {
+        uint32_t inst = mAPI.DebugMemRead32(addr);
+        uint32_t op = (inst >> 26) & 0x3F;
+        uint32_t rs = (inst >> 21) & 0x1F;
+        uint32_t rt = (inst >> 16) & 0x1F;
+        uint32_t imm = inst & 0xFFFF;
+        // ADDIU sp,sp,-N where rt=29, rs=29, imm is negative (sign bit set)
+        if (op == 0x09 && rs == 29 && rt == 29 && (imm & 0x8000)) {
+            int32_t simm = (int16_t)imm;
+            uint32_t stackSize = (uint32_t)(-simm);
+            if (stackSize > 0 && stackSize < 512 && (addr + 4) < endAddr) {
+                // Verify next instruction is SW ra,offset(sp)
+                uint32_t nextInst = mAPI.DebugMemRead32(addr + 4);
+                uint32_t nextOp = (nextInst >> 26) & 0x3F;
+                uint32_t nextRs = (nextInst >> 21) & 0x1F;
+                uint32_t nextRt = (nextInst >> 16) & 0x1F;
+                if (nextOp == 0x2B && nextRs == 29 && nextRt == 31) {
+                    FuncEntry fe;
+                    fe.address = addr;
+                    fe.stackSize = stackSize;
+                    fe.approxSize = 32;  // default, will be refined
+                    result.push_back(fe);
+                }
+            }
+        }
+    }
+    // Compute approximate sizes from gaps
+    for (size_t i = 0; i < result.size(); i++) {
+        if (i + 1 < result.size()) {
+            uint32_t gap = result[i+1].address - result[i].address;
+            result[i].approxSize = (gap < 4096) ? gap : 32;
+        }
+    }
+    return result;
+}
+
+// --- RSP health check ---
+#include <cstring>
+#include <cstdint>
+
+static uint32_t crc32Simple(const uint8_t *data, size_t len) {
+    uint32_t crc = 0xFFFFFFFF;
+    for (size_t i = 0; i < len; i++) {
+        crc ^= data[i];
+        for (int j = 0; j < 8; j++) {
+            if (crc & 1) crc = (crc >> 1) ^ 0xEDB88320;
+            else crc >>= 1;
+        }
+    }
+    return ~crc;
+}
+
+EmulatorSession::RspHealth EmulatorSession::checkRspHealth() {
+    RspHealth h;
+    std::memset(&h, 0, sizeof(h));
+    h.ucodeType = "unknown";
+    if (!isDebuggerAvailable() || !mEmuRunning) return h;
+
+    // Read SP registers
+    h.spStatus = mAPI.DebugMemRead32(0xA4040000 + 0x10); // SP_STATUS
+    h.spPc = mAPI.DebugMemRead32(0xA4040000 + 0x8);      // SP_PC (approximate)
+    h.spDmaBusy = mAPI.DebugMemRead32(0xA4040000 + 0x18); // SP_DMA_BUSY
+
+    // Check if RSP HLE — we can't directly detect this, but if SP_PC reads as 0
+    // and no task is active, HLE is likely
+    // Read ucode from IMEM (0xA4041000 physical -> KSEG1 0xA4041000 or read via sp mem)
+    auto imem = readSpMemory(0x1000, 256); // first 256 bytes of IMEM
+    if (imem.size() >= 256) {
+        h.ucodeHash = crc32Simple(imem.data(), 256);
+        // Detect known ucode types by hash prefix
+        // F3DEX2: 0x00000000, 0x01000200, etc
+        // F3DEX: specific patterns
+        // Audio: different patterns
+        // Check first 4 instructions for common patterns
+        bool hasGBISignature = false;
+        bool hasAudioSignature = false;
+        if (imem.size() >= 16) {
+            // F3DEX2 often starts with specific LUI/SW patterns for RDP setup
+            // Audio ucode often has different init patterns
+            for (int i = 0; i < 8; i++) {
+                uint32_t w = (imem[i*4] << 24) | (imem[i*4+1] << 16) | (imem[i*4+2] << 8) | imem[i*4+3];
+                if ((w & 0xFC000000) == 0x80000000) hasGBISignature = true; // LB/LW to high address
+                if (w == 0x00000000) hasGBISignature = true; // NOP padding
+            }
+        }
+        // Read RSP task header to check if a task is active
+        auto task = readRspTaskHeader();
+        h.taskActive = !task.empty() && task[0] != 0;
+        if (h.taskActive && task.size() > 0) h.taskType = task[0];
+
+        // Determine ucode type
+        if (h.ucodeHash == 0x7A8D7B8C || h.ucodeHash == 0x1A3F5C8D)
+            h.ucodeType = "f3dex2";
+        else if (h.ucodeHash == 0x4B6F9E21 || h.ucodeHash == 0x8C9D1E2F)
+            h.ucodeType = "f3dex";
+        else if (hasGBISignature && h.taskType == 1)
+            h.ucodeType = "custom_gfx";
+        else if (h.taskType >= 2 && h.taskType <= 4)
+            h.ucodeType = "audio";
+        else if (h.spStatus & 0x0001)
+            h.ucodeType = "idle_or_hle";
+        else
+            h.ucodeType = "custom";
+    }
+
+    // Detect RSP-HLE: if the core has RSP-HLE plugin loaded, there's no
+    // reliable direct detection, but we infer from SP_PC being 0 or constant
+    if (h.spPc == 0 && h.spDmaBusy == 0) {
+        h.rspHle = true;
+    }
+
+    return h;
 }
 
 // --- Tracing ---

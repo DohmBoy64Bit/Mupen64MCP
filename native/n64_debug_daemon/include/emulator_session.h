@@ -48,6 +48,30 @@ public:
     bool removeBreakpoint(int index);
     std::vector<BreakpointInfo> listBreakpoints();
 
+    // ROM offset <-> RDRAM address translation
+    // For N64: boot code loaded from file offset 0x1000 to RDRAM KSEG0 0x80100000
+    // Lower offsets (0x0000-0x0FFF) are IPL3 ROM mirror at KSEG0 0x80000000
+    static uint32_t fileOffsetToRdram(uint32_t fileOffset);
+    static uint32_t rdramToFileOffset(uint32_t rdramAddr);
+    static uint32_t rdramToKseg1(uint32_t rdramAddr);
+
+    // Function scanner
+    struct FuncEntry { uint32_t address; uint32_t stackSize; uint32_t approxSize; };
+    std::vector<FuncEntry> scanFunctions(uint32_t startAddr, uint32_t endAddr);
+
+    // RSP health check
+    struct RspHealth {
+        bool rspHle;           // true if RSP-HLE plugin is used
+        uint32_t spPc;
+        uint32_t spStatus;
+        uint32_t spDmaBusy;
+        uint32_t ucodeHash;   // CRC32 of first 256 bytes of IMEM
+        std::string ucodeType; // "f3dex2", "f3dex", "custom", "audio", "unknown"
+        bool taskActive;
+        uint32_t taskType;
+    };
+    RspHealth checkRspHealth();
+
     // Tracing
     void enableRomReadTrace(bool enabled);
     void enableRspTrace(bool enabled);
@@ -156,6 +180,10 @@ private:
     bool mTraceRsp = false;
     bool mTracePiDma = false;
     uint32_t mLastPiStatus = 0;
+
+    // BP tracking — own our BPs for reliable listing/removal
+    struct TrackedBp { int index; uint32_t address; uint32_t endAddress; unsigned int flags; };
+    std::vector<TrackedBp> mOwnedBps;
 
     // Stepping: temporarily removed BP tracking
     uint32_t mSteppingBpAddr = 0;
