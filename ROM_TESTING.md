@@ -60,21 +60,6 @@ All 47 MCP tools tested via direct JSON-RPC on Paper Mario. Run 3Ã— with dummy p
 
 Only failure: `scan_functions` returns 119-190 functions (below 300 threshold â€” Paper Mario's Intelligent Systems engine has a different code layout than Cruis'n USA). One timing flake on run 2 (wait_for_frame timeout). All core tools pass reliably.
 
-## Viewer Test Results
-
-### Star Fox 64: 44/45 PASS## Non-Viewer Test Results
-
-### Cruis'n USA: 43/49 PASS
-
-6 expected failures due to custom Midway engine (no libultra patterns):
-- OS detection Ã—4 failures
-- Scheduler trace (custom scheduler, no queue_addr)
-- Frame capture (frame counter at 0 with dummy gfx)
-
-### Star Fox 64: 45/46 PASS
-
-1 expected failure: display list scanner finds no DLs in attract mode.
-
 ## Exhaustive Feature Test (Cruis'n USA): 44/44 PASS
 
 | Feature | Tests | Result |
@@ -102,7 +87,6 @@ Only failure: `scan_functions` returns 119-190 functions (below 300 threshold â€
 - Standard IPL3 boot (`0x80000400` entry)
 - libultra detected: `osCreateThread @ 0x8001C3EC`, `osStartThread @ 0x80006FD8`, `osYieldThread @ 0x800049D4`
 - Full MCP tool test: **111-112/115 PASS** (scan_functions returns 0 due to ROM layout, 1 timing flake)
-- Non-viewer test: 45/46 PASS
 - Framebuffer: 320Ã—240 RGBA8888 with **actual non-zero pixels** after initial render
 - Frame rate: ~60 FPS, 31 auto-captures in 5 seconds
 - RSP task type: 0x02 (standard F3D ucode)
@@ -149,7 +133,6 @@ Only failure: `scan_functions` returns 119-190 functions (below 300 threshold â€
 | `0x802C0000-0x802FFFFF` | F3DEX2 display lists | Active rendering commands |
 | `0x80330000` | CI8 palette data | Palette data |
 | `0x80340000` | Smooth gradient | Texture color data |
-
 ## Future Improvements
 
 ### OS Detector
@@ -159,9 +142,3 @@ Only failure: `scan_functions` returns 119-190 functions (below 300 threshold â€
 - Custom scheduler detection for non-libultra engines
 - RSP ucode type expansion beyond F3D/F3DEX2
 - ROM header format detection for non-standard headers (`FFFFFFFF` magic)
-
-### Viewer
-- `get_capture_pixels(index)` JSON-RPC method for historical frame pixels
-- Live framebuffer image rendering via PIL/Pillow
-- Thumbnail grid view for capture history
-- PNG export for captured frames
