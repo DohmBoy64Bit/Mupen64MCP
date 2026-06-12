@@ -30,6 +30,21 @@ All 47 MCP tools tested via direct JSON-RPC on Cruis'n USA. Run 3× with dummy p
 
 Tools `n64_start_daemon` and `n64_stop_daemon` are lifecycle operations tested implicitly (daemon started before and stopped after the suite). All remaining 45 tools are explicitly tested.
 
+## Full MCP Tool Test (Star Fox 64): 111-112/115 PASS
+
+All 47 MCP tools tested via direct JSON-RPC on Star Fox 64. Run 3× with dummy plugins and 3× with Rice + RSP-HLE.
+
+| Run | Plugins | Score | Note |
+|-----|---------|-------|------|
+| 1 | dummy | 112/115 | scan_functions returns 0 (different ROM layout) |
+| 2 | dummy | 112/115 | scan_functions returns 0 |
+| 3 | dummy | 111/115 | scan_functions + 1 timing flake |
+| 4 | Rice+RSP-HLE | 111/115 | scan_functions + 1 timing flake |
+| 5 | Rice+RSP-HLE | 112/115 | scan_functions returns 0 |
+| 6 | Rice+RSP-HLE | 112/115 | scan_functions returns 0 |
+
+The consistent delta from 122/122 (Cruis'n USA score): `scan_functions` returns 0 because Star Fox 64's memory layout doesn't place 300+ functions in the default scan range at boot time. The other 1-off failures are timing-sensitive (step_instruction after step_frame). All core tools (breakpoints, memory, registers, tracing, input, framebuffer, RSP, PI DMA, OS detection) pass reliably.
+
 ## Viewer Test Results
 
 ### Cruis'n USA: 45/45 PASS
@@ -96,6 +111,9 @@ Same structure as above. 1 expected failure: callchain events not caught in 3-se
 - CRC: `BA780BA0 0F21DB34`, 12 MB
 - Standard IPL3 boot (`0x80000400` entry)
 - libultra detected: `osCreateThread @ 0x8001C3EC`, `osStartThread @ 0x80006FD8`, `osYieldThread @ 0x800049D4`
+- Full MCP tool test: **111-112/115 PASS** (scan_functions returns 0 due to ROM layout, 1 timing flake)
+- Viewer test: 44/45 PASS
+- Non-viewer test: 45/46 PASS
 - Framebuffer: 320×240 RGBA8888 with **actual non-zero pixels** after initial render
 - Frame rate: ~60 FPS, 31 auto-captures in 5 seconds
 - RSP task type: 0x02 (standard F3D ucode)
