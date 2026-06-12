@@ -47,11 +47,7 @@ The consistent delta from 122/122 (Cruis'n USA score): `scan_functions` returns 
 
 ## Viewer Test Results
 
-### Star Fox 64: 44/45 PASS
-
-Same structure as above. 1 expected failure: callchain events not caught in 3-second window (attract mode doesn't hit scheduler).
-
-## Non-Viewer Test Results
+### Star Fox 64: 44/45 PASS## Non-Viewer Test Results
 
 ### Cruis'n USA: 43/49 PASS
 
@@ -91,7 +87,6 @@ Same structure as above. 1 expected failure: callchain events not caught in 3-se
 - Standard IPL3 boot (`0x80000400` entry)
 - libultra detected: `osCreateThread @ 0x8001C3EC`, `osStartThread @ 0x80006FD8`, `osYieldThread @ 0x800049D4`
 - Full MCP tool test: **111-112/115 PASS** (scan_functions returns 0 due to ROM layout, 1 timing flake)
-- Viewer test: 44/45 PASS
 - Non-viewer test: 45/46 PASS
 - Framebuffer: 320×240 RGBA8888 with **actual non-zero pixels** after initial render
 - Frame rate: ~60 FPS, 31 auto-captures in 5 seconds
