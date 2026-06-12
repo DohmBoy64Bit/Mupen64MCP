@@ -175,6 +175,13 @@ native/n64_debug_daemon/build/n64-debug-daemon.exe ^
 - `--rsp mupen64plus-rsp-hle.dll` — RSP HLE (required for real rendering)
 - `--audio dummy` — no audio output (recommended for debugging)
 
+**⚠ PATH requirement (real plugins only):** When passing `--gfx`, `--rsp`, `--audio`, or `--input` with real plugin DLLs, MSYS2's MINGW64 bin directory must appear **before** WinLibs' in PATH (see [MinGW DLL ABI Compatibility](#mingw-dll-abi-compatibility-important) below). Use the included `start_daemon.bat` which sets this order correctly:
+
+```batch
+start_daemon.bat
+# or edit it for custom plugin paths
+```
+
 ### Injecting controller input
 
 ```python
@@ -437,9 +444,60 @@ D:\Mupen64MCP\
 - Frame counter requires VI interrupts (dummy gfx plugins may not increment it)
 - Input injection requires passing `--input path/to/mupen64plus-input-inject.dll` at daemon startup
 - `--core <path>` is required — the daemon default (`libmupen64plus.dll`) does not match the actual DLL name (`mupen64plus.dll`)
-- Must add MSYS2 MINGW64 `bin` and core `lib` to PATH before starting daemon; `Start-Process` in PowerShell does not inherit shell PATH
+- `Start-Process` in PowerShell does not inherit shell PATH; always set PATH explicitly when launching the daemon programmatically
 - **Rice video plugin framebuffer writeback compatibility**: Works with Star Fox 64 (standard F3D ucode) but produces black framebuffer with Cruis'n USA (custom F3DEX-based microcode). This is a plugin limitation, not a daemon bug — the framebuffer dimensions and format are correctly reported. For pixel-accurate capture on all ROMs, a different video plugin or renderer may be needed.
 - **Function scanner requires emulator in KSEG0 range**: `scan_functions` returns 0 results if the emulator PC is still in SP boot (0xA4000000). Resume and re-pause before scanning.
+
+### MinGW DLL ABI Compatibility (IMPORTANT)
+
+This project relies on **two independent MinGW-w64 distributions**, and their runtime DLLs are **not ABI-compatible with each other**. Mixing them causes a `0xC0000005` (ACCESS_VIOLATION) crash during `load_rom` when real plugins (Rice video, RSP-HLE) are loaded.
+
+#### The two distributions
+
+| Distribution | Location | Used by | GCC version |
+|---|---|---|---|
+| **WinLibs** (Brecht Sanders) | `%LOCALAPPDATA%\Microsoft\WinGet\Packages\BrechtSanders.WinLibs...\mingw64\bin` | `n64-debug-daemon.exe` (the daemon binary itself) | 15.2.0 |
+| **MSYS2** | `C:\msys64\mingw64\bin` | Mupen64Plus plugins (video-rice, rsp-hle, audio-sdl, input-sdl, and the core DLL) | 16.1.0 |
+
+Both supply their own versions of:
+- `libstdc++-6.dll` — C++ standard library runtime
+- `libgcc_s_seh-1.dll` — GCC exception handling runtime
+- `libwinpthread-1.dll` — POSIX threads runtime
+- `SDL2.dll`, `libpng16-16.dll`, `libfreetype-6.dll`, `zlib1.dll` — third-party dependencies
+
+#### Why this causes crashes
+
+The Mupen64Plus plugins (video-rice, rsp-hle, etc.) are built inside the MSYS2 environment and link against MSYS2's `libstdc++-6.dll`. When the daemon calls `LoadLibrary` on a plugin DLL, Windows resolves its dependency DLLs by searching PATH **in order**. If WinLibs' `bin` directory appears before MSYS2's in PATH, Windows finds WinLibs' `libstdc++-6.dll` (GCC 15.2) first and loads it — but the plugin expects MSYS2's version (GCC 16.1 or 14.2). The internal data structures (RTTI, exception frames, `std::string`, vtable layout) differ between these builds, causing an immediate access violation at ROM load time.
+
+#### The fix
+
+**MSYS2 must appear before WinLibs in PATH.** The `start_daemon.bat` script sets this order:
+
+```batch
+set PATH=%MSYS2_MINGW%;%WINLIBS_MINGW%;%CORE_LIB%;%PATH%
+```
+
+With this order:
+- Plugins get their matching MSYS2 runtime DLLs → **no crash**
+- The daemon binary itself (linked against WinLibs) loads MSYS2's `libstdc++-6.dll` instead, which is ABI-compatible enough at the C ABI level for the daemon's needs (it does minimal C++ across the DLL boundary)
+
+#### Verifying correct resolution
+
+To check which `libstdc++-6.dll` is actually loaded at runtime, use `Process Explorer` or `ListDLLs` from Sysinternals on the daemon process after loading plugins:
+
+```
+C:\> listdlls -d libstdc++-6 n64-debug-daemon.exe
+```
+
+If the path shown starts with `C:\msys64\...` the order is correct. If it shows `AppData\Local\Microsoft\WinGet\Packages\...`, WinLibs is resolving first and real plugins will crash.
+
+#### When real plugins crash (troubleshooting checklist)
+
+1. Check that MSYS2 bin is **before** WinLibs bin in PATH
+2. Verify the plugin DLLs exist at their expected paths
+3. Test with Star Fox 64 first — if it loads, the PATH is correct and any remaining issue is ROM-specific
+4. If all plugins crash, the MSYS2 runtime may have been updated incompatibly — rebuild the plugins with `--rsp` and `--gfx` from the MSYS2 shell
+5. If just the video plugin crashes with a particular ROM, it may be a microcode compatibility issue (see "Rice video plugin framebuffer writeback" above)
 
 ### Tested ROMs
 - **Cruis'n USA** (NCUE) — CRC `FF2F2FB4 D161149A`, 8 MB
