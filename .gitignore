@@ -29,6 +29,9 @@ roms/
 # Engine reverse engineering docs (keep locally, not on GitHub)
 docs/engine_reverse/
 
+# Local test scripts (3x3 methodology, not for distribution)
+mcp/tests/
+
 # Logs
 *.log
 
